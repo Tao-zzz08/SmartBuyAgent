@@ -1,0 +1,262 @@
+[
+  {
+    "id": "attr_phone_storage",
+    "category_id": "cat_phone",
+    "name": "存储容量",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 1
+  },
+  {
+    "id": "attr_phone_memory",
+    "category_id": "cat_phone",
+    "name": "运行内存",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 2
+  },
+  {
+    "id": "attr_phone_processor",
+    "category_id": "cat_phone",
+    "name": "处理器",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 3
+  },
+  {
+    "id": "attr_phone_screen_size",
+    "category_id": "cat_phone",
+    "name": "屏幕尺寸",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 4
+  },
+  {
+    "id": "attr_phone_refresh_rate",
+    "category_id": "cat_phone",
+    "name": "刷新率",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 5
+  },
+  {
+    "id": "attr_phone_battery",
+    "category_id": "cat_phone",
+    "name": "电池容量",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 6
+  },
+  {
+    "id": "attr_phone_fast_charge",
+    "category_id": "cat_phone",
+    "name": "快充功率",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 7
+  },
+  {
+    "id": "attr_phone_camera",
+    "category_id": "cat_phone",
+    "name": "拍照能力",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 8
+  },
+  {
+    "id": "attr_phone_system",
+    "category_id": "cat_phone",
+    "name": "系统",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 9
+  },
+  {
+    "id": "attr_phone_warranty",
+    "category_id": "cat_phone",
+    "name": "保修",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 10
+  },
+  {
+    "id": "attr_shoes_size",
+    "category_id": "cat_shoes",
+    "name": "尺码",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 1
+  },
+  {
+    "id": "attr_shoes_material",
+    "category_id": "cat_shoes",
+    "name": "材质",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 2
+  },
+  {
+    "id": "attr_shoes_type",
+    "category_id": "cat_shoes",
+    "name": "鞋型",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 3
+  },
+  {
+    "id": "attr_shoes_scene",
+    "category_id": "cat_shoes",
+    "name": "适用场景",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 4
+  },
+  {
+    "id": "attr_shoes_sole_material",
+    "category_id": "cat_shoes",
+    "name": "鞋底材质",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 5
+  },
+  {
+    "id": "attr_shoes_anti_slip",
+    "category_id": "cat_shoes",
+    "name": "是否防滑",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 6
+  },
+  {
+    "id": "attr_shoes_lightweight",
+    "category_id": "cat_shoes",
+    "name": "是否轻便",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 7
+  },
+  {
+    "id": "attr_shoes_closure",
+    "category_id": "cat_shoes",
+    "name": "闭合方式",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 8
+  },
+  {
+    "id": "attr_skincare_skin_type",
+    "category_id": "cat_skincare",
+    "name": "肤质",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 1
+  },
+  {
+    "id": "attr_skincare_effect",
+    "category_id": "cat_skincare",
+    "name": "功效",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 2
+  },
+  {
+    "id": "attr_skincare_ingredients",
+    "category_id": "cat_skincare",
+    "name": "成分",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 3
+  },
+  {
+    "id": "attr_skincare_volume",
+    "category_id": "cat_skincare",
+    "name": "容量",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 4
+  },
+  {
+    "id": "attr_skincare_audience",
+    "category_id": "cat_skincare",
+    "name": "适用人群",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 5
+  },
+  {
+    "id": "attr_skincare_sensitive_skin",
+    "category_id": "cat_skincare",
+    "name": "敏感肌可用",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": true,
+    "display_order": 6
+  },
+  {
+    "id": "attr_skincare_frequency",
+    "category_id": "cat_skincare",
+    "name": "使用频率",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 7
+  },
+  {
+    "id": "attr_skincare_shelf_life",
+    "category_id": "cat_skincare",
+    "name": "保质期",
+    "value_type": "string",
+    "is_required": false,
+    "is_filterable": true,
+    "is_recommend_factor": false,
+    "display_order": 8
+  }
+]

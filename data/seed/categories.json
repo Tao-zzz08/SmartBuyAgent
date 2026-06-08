@@ -1,0 +1,50 @@
+[
+  {
+    "id": "cat_digital",
+    "parent_id": null,
+    "name": "数码",
+    "level": 1,
+    "description": "手机、电脑、智能设备等数码商品",
+    "is_active": true
+  },
+  {
+    "id": "cat_phone",
+    "parent_id": "cat_digital",
+    "name": "手机",
+    "level": 2,
+    "description": "全新手机与相关智能终端",
+    "is_active": true
+  },
+  {
+    "id": "cat_fashion",
+    "parent_id": null,
+    "name": "服装",
+    "level": 1,
+    "description": "服饰、鞋靴、穿搭相关商品",
+    "is_active": true
+  },
+  {
+    "id": "cat_shoes",
+    "parent_id": "cat_fashion",
+    "name": "鞋靴",
+    "level": 2,
+    "description": "通勤、运动、休闲等鞋靴商品",
+    "is_active": true
+  },
+  {
+    "id": "cat_beauty",
+    "parent_id": null,
+    "name": "美妆",
+    "level": 1,
+    "description": "美妆、护肤、个护相关商品",
+    "is_active": true
+  },
+  {
+    "id": "cat_skincare",
+    "parent_id": "cat_beauty",
+    "name": "护肤",
+    "level": 2,
+    "description": "面部护理、基础护肤与功效护肤商品",
+    "is_active": true
+  }
+]

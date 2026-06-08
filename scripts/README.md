@@ -1,5 +1,12 @@
 # Scripts
 
-This directory is reserved for later automation scripts, including product import, document import, and index rebuild tasks.
+This directory contains project maintenance and seed import scripts.
 
-Stage 0 does not include any script implementation.
+- `init_db.py`: initializes database tables from SQLAlchemy models.
+- `import_categories.py`: imports base categories, category attribute definitions, and category guide profiles.
+
+Not implemented yet:
+
+- product import
+- document import
+- index rebuild
