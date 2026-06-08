@@ -17,6 +17,12 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+## Initialize Database
+
+```bash
+python ../scripts/init_db.py
+```
+
 ## Test
 
 ```bash

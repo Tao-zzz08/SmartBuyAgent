@@ -12,4 +12,5 @@ def health_check() -> dict[str, str]:
         "status": "ok",
         "app": settings.APP_NAME,
         "version": API_VERSION,
+        "stage":"stage_0",
     }
