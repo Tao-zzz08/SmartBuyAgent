@@ -19,6 +19,13 @@ cd backend
 pytest
 ```
 
+## Initialize Database
+
+```bash
+cd backend
+python ../scripts/init_db.py
+```
+
 ## Start Frontend
 
 ```bash
