@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.chat import get_chat_chroma_client, get_chat_embedding_service
+from app.api.chat import (
+    get_chat_chroma_client,
+    get_chat_embedding_service,
+    get_chat_llm_answer_composer,
+)
 from app.core.db import Base, get_db
 from app.main import app
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
@@ -38,6 +42,31 @@ class CountingEmbeddingService(BaseEmbeddingService):
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         self.calls += len(texts)
         return self._delegate.embed_texts(texts)
+
+
+class FakeLLMAnswerComposer:
+    provider = "fake"
+
+    def __init__(self, answer: str = "API fake LLM answer") -> None:
+        self.answer = answer
+        self.calls = []
+
+    def compose(
+        self,
+        query,
+        query_result,
+        product_candidates=None,
+        citations=None,
+    ) -> str:
+        self.calls.append(
+            {
+                "query": query,
+                "query_result": query_result,
+                "product_candidates": product_candidates or [],
+                "citations": citations or [],
+            }
+        )
+        return self.answer
 
 
 def _create_test_session(db_name: str):
@@ -80,6 +109,7 @@ def _override_dependencies(
     TestingSessionLocal,
     chroma_client,
     embedding_service: BaseEmbeddingService | None = None,
+    llm_answer_composer=None,
 ) -> None:
     def override_get_db() -> Generator[Session, None, None]:
         db = TestingSessionLocal()
@@ -92,6 +122,9 @@ def _override_dependencies(
     app.dependency_overrides[get_chat_chroma_client] = lambda: chroma_client
     app.dependency_overrides[get_chat_embedding_service] = (
         lambda: embedding_service or MockEmbeddingService()
+    )
+    app.dependency_overrides[get_chat_llm_answer_composer] = (
+        lambda: llm_answer_composer or FakeLLMAnswerComposer()
     )
 
 
@@ -112,7 +145,13 @@ def test_chat_api_shopping_guide() -> None:
         "chroma_chat_api_shopping_test",
     )
     embedding_service = CountingEmbeddingService()
-    _override_dependencies(TestingSessionLocal, chroma_client, embedding_service)
+    llm_answer_composer = FakeLLMAnswerComposer(answer="API fake LLM answer")
+    _override_dependencies(
+        TestingSessionLocal,
+        chroma_client,
+        embedding_service,
+        llm_answer_composer,
+    )
     try:
         client = TestClient(app)
         response = client.post(
@@ -123,13 +162,16 @@ def test_chat_api_shopping_guide() -> None:
         steps = _steps(payload)
 
         assert response.status_code == 200
-        assert payload["answer"]
+        assert payload["answer"] == "API fake LLM answer"
         assert 0 < len(payload["product_cards"]) <= 3
+        assert len(payload["citations"]) > 0
         assert "query_understanding" in steps
         assert "product_retrieval" in steps
         assert "knowledge_retrieval" in steps
+        assert "llm_answer" in steps
         assert "response_composer" in steps
         assert embedding_service.calls > 0
+        assert len(llm_answer_composer.calls) == 1
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

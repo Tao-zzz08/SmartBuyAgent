@@ -97,11 +97,12 @@ LLM_API_KEY=your-api-key
 LLM_MODEL=your-chat-model
 ```
 
-Task 6.1 only adds the provider abstraction and tests. LLM answer generation is
-not connected to `ChatService` yet.
-Task 6.2 adds `LLMAnswerComposer`, a standalone component that can generate a
-controlled answer from retrieved product candidates and citations. It is not
-connected to `ChatService` yet.
+Task 6.1 adds the provider abstraction and tests. Task 6.2 adds
+`LLMAnswerComposer`, a standalone component that can generate a controlled answer
+from retrieved product candidates and citations. Task 6.3 connects
+`LLMAnswerComposer` to `ChatService` for `shopping_guide` and
+`product_knowledge`; the LLM only generates the `answer` text, while product
+cards and citations still come from retrieval services.
 
 ## Retrieval Evaluation
 
@@ -174,7 +175,7 @@ npm run dev
 
 - 300 条 demo 商品数据
 - 真实 embedding
-- LLM 回答生成
+- 生产级 LLM 回答质量优化
 - LangGraph Agent
 - SSE
 - 完整 Web Debug 高级功能

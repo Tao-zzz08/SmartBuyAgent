@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.chat.chat_service import ChatService
+from app.chat.llm_answer_composer import LLMAnswerComposer
 from app.chat.response_composer import ChatResponse
 from app.core.db import get_db
 from app.retrieval.chroma_indexer import get_chroma_client
@@ -12,6 +13,7 @@ from app.schemas.chat import (
     ProductCardResponse,
 )
 from app.services.embedding import BaseEmbeddingService, get_embedding_service
+from app.services.llm import BaseLLMService, get_llm_service
 
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -25,17 +27,29 @@ def get_chat_embedding_service() -> BaseEmbeddingService:
     return get_embedding_service()
 
 
+def get_chat_llm_service() -> BaseLLMService:
+    return get_llm_service()
+
+
+def get_chat_llm_answer_composer(
+    llm_service: BaseLLMService = Depends(get_chat_llm_service),
+) -> LLMAnswerComposer:
+    return LLMAnswerComposer(llm_service)
+
+
 @router.post("/chat", response_model=ChatResponseSchema)
 def chat(
     request: ChatRequest,
     db: Session = Depends(get_db),
     chroma_client=Depends(get_chat_chroma_client),
     embedding_service: BaseEmbeddingService = Depends(get_chat_embedding_service),
+    llm_answer_composer: LLMAnswerComposer = Depends(get_chat_llm_answer_composer),
 ) -> ChatResponseSchema:
     chat_service = ChatService(
         db=db,
         embedding_service=embedding_service,
         chroma_client=chroma_client,
+        llm_answer_composer=llm_answer_composer,
     )
     chat_response = chat_service.handle_message(request.query)
     return _to_response_schema(

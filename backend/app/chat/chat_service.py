@@ -4,13 +4,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.chat.llm_answer_composer import LLMAnswerComposer
 from app.chat.query_understanding import (
     QueryUnderstandingResult,
     QueryUnderstandingService,
 )
 from app.chat.response_composer import ChatResponse, ResponseComposer
 from app.retrieval.retrieval_service import (
+    Citation,
     KnowledgeRetrievalService,
+    ProductCandidate,
     ProductRetrievalService,
     ProductSearchFilters,
 )
@@ -25,6 +28,7 @@ class ChatService:
         chroma_client=None,
         query_understanding_service: QueryUnderstandingService | None = None,
         response_composer: ResponseComposer | None = None,
+        llm_answer_composer: LLMAnswerComposer | None = None,
     ) -> None:
         self.db = db
         self.embedding_service = embedding_service
@@ -33,6 +37,7 @@ class ChatService:
             query_understanding_service or QueryUnderstandingService()
         )
         self.response_composer = response_composer or ResponseComposer()
+        self.llm_answer_composer = llm_answer_composer
         self.product_retrieval_service = ProductRetrievalService(
             db=db,
             embedding_service=embedding_service,
@@ -95,6 +100,13 @@ class ChatService:
                 product_candidates=product_candidates,
                 citations=citations,
             )
+            response = self._compose_with_optional_llm(
+                query=query,
+                query_result=query_result,
+                base_response=response,
+                product_candidates=product_candidates,
+                citations=citations,
+            )
             return self._with_trace(response, trace)
 
         if query_result.intent == "product_knowledge":
@@ -113,6 +125,13 @@ class ChatService:
 
             response = self.response_composer.compose(
                 query_result,
+                citations=citations,
+            )
+            response = self._compose_with_optional_llm(
+                query=query,
+                query_result=query_result,
+                base_response=response,
+                product_candidates=[],
                 citations=citations,
             )
             return self._with_trace(response, trace)
@@ -141,4 +160,90 @@ class ChatService:
             product_cards=response.product_cards,
             citations=response.citations,
             trace=[*trace, *response.trace],
+        )
+
+    def _compose_with_optional_llm(
+        self,
+        query: str,
+        query_result: QueryUnderstandingResult,
+        base_response: ChatResponse,
+        product_candidates: list[ProductCandidate] | None = None,
+        citations: list[Citation] | None = None,
+    ) -> ChatResponse:
+        if self.llm_answer_composer is None:
+            return self._append_response_trace(
+                base_response,
+                {
+                    "step": "llm_answer",
+                    "enabled": False,
+                    "status": "disabled",
+                },
+            )
+
+        provider = self._llm_provider()
+        try:
+            llm_answer = self.llm_answer_composer.compose(
+                query=query,
+                query_result=query_result,
+                product_candidates=product_candidates or [],
+                citations=citations or [],
+            )
+        except Exception:
+            return self._append_response_trace(
+                base_response,
+                {
+                    "step": "llm_answer",
+                    "enabled": True,
+                    "status": "fallback",
+                    "provider": provider,
+                },
+            )
+
+        normalized_answer = llm_answer.strip()
+        if not normalized_answer:
+            return self._append_response_trace(
+                base_response,
+                {
+                    "step": "llm_answer",
+                    "enabled": True,
+                    "status": "fallback",
+                    "provider": provider,
+                },
+            )
+
+        return ChatResponse(
+            answer=normalized_answer,
+            product_cards=base_response.product_cards,
+            citations=base_response.citations,
+            trace=[
+                *base_response.trace,
+                {
+                    "step": "llm_answer",
+                    "enabled": True,
+                    "status": "success",
+                    "provider": provider,
+                },
+            ],
+        )
+
+    def _llm_provider(self) -> str:
+        llm_service = getattr(self.llm_answer_composer, "llm_service", None)
+        provider = getattr(llm_service, "provider", None)
+        if isinstance(provider, str) and provider:
+            return provider
+        provider = getattr(self.llm_answer_composer, "provider", None)
+        if isinstance(provider, str) and provider:
+            return provider
+        return "unknown"
+
+    @staticmethod
+    def _append_response_trace(
+        response: ChatResponse,
+        trace_step: dict[str, Any],
+    ) -> ChatResponse:
+        return ChatResponse(
+            answer=response.answer,
+            product_cards=response.product_cards,
+            citations=response.citations,
+            trace=[*response.trace, trace_step],
         )

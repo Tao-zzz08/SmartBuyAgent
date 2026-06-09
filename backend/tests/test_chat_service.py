@@ -9,6 +9,7 @@ from app.chat.chat_service import ChatService
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.core.db import Base
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
+from app.retrieval.retrieval_service import Citation, ProductCandidate
 from app.services.embedding import MockEmbeddingService
 
 
@@ -43,6 +44,54 @@ class RecordingProductRetrievalService:
 class EmptyKnowledgeRetrievalService:
     def search_knowledge(self, query, category_id=None, top_k=3):
         return []
+
+
+class StaticProductRetrievalService:
+    def __init__(self, candidates: list[ProductCandidate]) -> None:
+        self.candidates = candidates
+
+    def search_products(self, query, filters, top_k):
+        return self.candidates[:top_k]
+
+
+class StaticKnowledgeRetrievalService:
+    def __init__(self, citations: list[Citation]) -> None:
+        self.citations = citations
+
+    def search_knowledge(self, query, category_id=None, top_k=3):
+        return self.citations[:top_k]
+
+
+class FakeLLMAnswerComposer:
+    provider = "fake"
+
+    def __init__(
+        self,
+        answer: str = "LLM generated shopping answer",
+        should_raise: bool = False,
+    ) -> None:
+        self.answer = answer
+        self.should_raise = should_raise
+        self.calls = []
+
+    def compose(
+        self,
+        query,
+        query_result,
+        product_candidates=None,
+        citations=None,
+    ) -> str:
+        self.calls.append(
+            {
+                "query": query,
+                "query_result": query_result,
+                "product_candidates": product_candidates or [],
+                "citations": citations or [],
+            }
+        )
+        if self.should_raise:
+            raise RuntimeError("fake llm error")
+        return self.answer
 
 
 def _create_test_session(db_name: str):
@@ -89,6 +138,101 @@ def _steps(response) -> set[str]:
     return {step["step"] for step in response.trace}
 
 
+def _step(response, step_name: str) -> dict:
+    return next(step for step in response.trace if step["step"] == step_name)
+
+
+def _shopping_query_result() -> QueryUnderstandingResult:
+    return QueryUnderstandingResult(
+        raw_query="budget 3000 camera phone",
+        intent="shopping_guide",
+        category_id="cat_phone",
+        category_path="Digital/Phone",
+        budget_min=None,
+        budget_max=3000,
+        preferences=["camera"],
+        need_clarification=False,
+        clarification_question=None,
+    )
+
+
+def _knowledge_query_result() -> QueryUnderstandingResult:
+    return QueryUnderstandingResult(
+        raw_query="why phone camera is not only pixels",
+        intent="product_knowledge",
+        category_id="cat_phone",
+        category_path="Digital/Phone",
+        budget_min=None,
+        budget_max=None,
+        preferences=["camera"],
+        need_clarification=False,
+        clarification_question=None,
+    )
+
+
+def _sample_product_candidates() -> list[ProductCandidate]:
+    return [
+        ProductCandidate(
+            product_id="phone_001",
+            title="Camera Phone A",
+            brand="DemoBrand",
+            category_id="cat_phone",
+            price=2599,
+            stock=10,
+            description="A new phone for camera-focused users.",
+            image_url="https://example.com/phone_001.jpg",
+            tags=["camera", "value"],
+            attributes={"storage": "256GB", "battery": "5000mAh"},
+            source_url="https://example.com/products/phone_001",
+            compare_url="https://example.com/compare/phone_001",
+            distance=0.1,
+            score=0.9,
+            product_text="Camera Phone A with 256GB storage.",
+        )
+    ]
+
+
+def _sample_citations() -> list[Citation]:
+    return [
+        Citation(
+            chunk_id="chunk_phone_camera",
+            document_id="doc_phone_camera",
+            title="Phone Camera Guide",
+            section="Camera basics",
+            section_path="Phone Camera Guide > Camera basics",
+            source_file="data/knowledge_docs/phone/phone_camera_guide.md",
+            doc_type="guide",
+            category_id="cat_phone",
+            category_path="Digital/Phone",
+            content_preview="Do not judge phone cameras only by pixels.",
+            distance=0.2,
+            score=0.8,
+        )
+    ]
+
+
+def _make_chat_service(
+    query_result: QueryUnderstandingResult,
+    product_candidates: list[ProductCandidate] | None = None,
+    citations: list[Citation] | None = None,
+    llm_answer_composer=None,
+) -> ChatService:
+    chat_service = ChatService(
+        db=None,
+        embedding_service=MockEmbeddingService(),
+        chroma_client=object(),
+        query_understanding_service=StaticQueryUnderstandingService(query_result),
+        llm_answer_composer=llm_answer_composer,
+    )
+    chat_service.product_retrieval_service = StaticProductRetrievalService(
+        product_candidates or []
+    )
+    chat_service.knowledge_retrieval_service = StaticKnowledgeRetrievalService(
+        citations or []
+    )
+    return chat_service
+
+
 def test_chat_service_passes_preferences_to_product_retrieval() -> None:
     query_result = QueryUnderstandingResult(
         raw_query="预算3000，推荐一款拍照好的手机",
@@ -118,6 +262,81 @@ def test_chat_service_passes_preferences_to_product_retrieval() -> None:
     assert product_service.last_filters.preferences == ["拍照"]
     assert product_service.last_filters.category_id == "cat_phone"
     assert product_service.last_filters.budget_max == 3000
+
+
+def test_chat_service_uses_llm_answer_for_shopping_guide() -> None:
+    fake_llm = FakeLLMAnswerComposer(answer="LLM generated shopping answer")
+    products = _sample_product_candidates()
+    citations = _sample_citations()
+    chat_service = _make_chat_service(
+        _shopping_query_result(),
+        product_candidates=products,
+        citations=citations,
+        llm_answer_composer=fake_llm,
+    )
+
+    response = chat_service.handle_message("budget 3000 camera phone")
+
+    assert response.answer == "LLM generated shopping answer"
+    assert len(response.product_cards) == 1
+    assert response.product_cards[0].product_id == "phone_001"
+    assert len(response.citations) == 1
+    assert _step(response, "llm_answer")["status"] == "success"
+    assert fake_llm.calls[0]["product_candidates"] == products
+    assert fake_llm.calls[0]["citations"] == citations
+
+
+def test_chat_service_falls_back_to_template_when_llm_raises() -> None:
+    fake_llm = FakeLLMAnswerComposer(should_raise=True)
+    chat_service = _make_chat_service(
+        _shopping_query_result(),
+        product_candidates=_sample_product_candidates(),
+        citations=_sample_citations(),
+        llm_answer_composer=fake_llm,
+    )
+
+    response = chat_service.handle_message("budget 3000 camera phone")
+
+    assert response.answer
+    assert response.answer != fake_llm.answer
+    assert len(response.product_cards) == 1
+    assert len(response.citations) == 1
+    assert _step(response, "llm_answer")["status"] == "fallback"
+
+
+def test_chat_service_without_llm_keeps_template_answer() -> None:
+    chat_service = _make_chat_service(
+        _shopping_query_result(),
+        product_candidates=_sample_product_candidates(),
+        citations=_sample_citations(),
+    )
+
+    response = chat_service.handle_message("budget 3000 camera phone")
+
+    assert response.answer
+    assert response.answer != "LLM generated shopping answer"
+    assert len(response.product_cards) == 1
+    assert len(response.citations) == 1
+    assert _step(response, "llm_answer")["status"] == "disabled"
+
+
+def test_chat_service_uses_llm_for_product_knowledge() -> None:
+    fake_llm = FakeLLMAnswerComposer(answer="LLM generated knowledge answer")
+    citations = _sample_citations()
+    chat_service = _make_chat_service(
+        _knowledge_query_result(),
+        citations=citations,
+        llm_answer_composer=fake_llm,
+    )
+
+    response = chat_service.handle_message("why phone camera is not only pixels")
+
+    assert response.answer == "LLM generated knowledge answer"
+    assert response.product_cards == []
+    assert len(response.citations) == 1
+    assert _step(response, "llm_answer")["status"] == "success"
+    assert fake_llm.calls[0]["product_candidates"] == []
+    assert fake_llm.calls[0]["citations"] == citations
 
 
 def test_chat_service_shopping_guide_chain() -> None:
