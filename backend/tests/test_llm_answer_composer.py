@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from app.chat.llm_answer_composer import LLMAnswerComposer, SAFE_LLM_FALLBACK_ANSWER
+from app.chat.llm_answer_composer import (
+    LLMAnswerComposer,
+    SAFE_LLM_FALLBACK_ANSWER,
+    validate_llm_answer,
+)
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.retrieval.retrieval_service import Citation, ProductCandidate
 from app.services.llm import BaseLLMService, LLMMessage, LLMResponse
@@ -156,6 +160,131 @@ def test_compose_returns_fallback_when_llm_content_empty() -> None:
         query_result=_query_result(),
         product_candidates=[_product()],
         citations=[],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_validate_llm_answer_accepts_normal_answer() -> None:
+    result = validate_llm_answer(
+        "建议优先看星曜 X1，它在预算内，标签包含拍照好，适合日常拍摄。",
+        product_candidates=[_product()],
+        citations=[_citation()],
+    )
+
+    assert result.is_valid is True
+    assert result.reason is None
+
+
+def test_compose_returns_fallback_for_purchase_action() -> None:
+    composer = LLMAnswerComposer(FakeLLMService(content="我已经帮你下单这款手机。"))
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product()],
+        citations=[_citation()],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_compose_returns_fallback_for_discount_hallucination() -> None:
+    composer = LLMAnswerComposer(
+        FakeLLMService(content="这款是全网最低价，还有独家优惠。")
+    )
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product()],
+        citations=[_citation()],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_compose_returns_fallback_for_skincare_medical_claim() -> None:
+    composer = LLMAnswerComposer(
+        FakeLLMService(content="这款面霜可以治疗湿疹并根治敏感肌。")
+    )
+
+    answer = composer.compose(
+        query="敏感肌用什么保湿修护面霜",
+        query_result=_query_result(),
+        product_candidates=[_product()],
+        citations=[_citation()],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_compose_returns_fallback_for_json_output() -> None:
+    composer = LLMAnswerComposer(FakeLLMService(content='{"answer": "推荐 phone_001"}'))
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product()],
+        citations=[_citation()],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_compose_returns_fallback_for_markdown_table() -> None:
+    composer = LLMAnswerComposer(
+        FakeLLMService(content="| 商品 | 理由 |\n| --- | --- |\n| phone_001 | 预算内 |")
+    )
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product()],
+        citations=[_citation()],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_compose_returns_fallback_for_unknown_product_id() -> None:
+    composer = LLMAnswerComposer(FakeLLMService(content="建议选择 phone_999。"))
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product(product_id="phone_001")],
+        citations=[_citation()],
+    )
+
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
+
+
+def test_compose_allows_known_product_id() -> None:
+    composer = LLMAnswerComposer(
+        FakeLLMService(content="建议选择 phone_001，因为它在预算内。")
+    )
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product(product_id="phone_001")],
+        citations=[_citation()],
+    )
+
+    assert answer == "建议选择 phone_001，因为它在预算内。"
+
+
+def test_compose_returns_fallback_for_unknown_url() -> None:
+    composer = LLMAnswerComposer(
+        FakeLLMService(content="详情见 https://unknown.example.com")
+    )
+
+    answer = composer.compose(
+        query="预算3000，推荐一款拍照好的手机",
+        query_result=_query_result(),
+        product_candidates=[_product()],
+        citations=[_citation()],
     )
 
     assert answer == SAFE_LLM_FALLBACK_ANSWER

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import re
+
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.retrieval.retrieval_service import Citation, ProductCandidate
 from app.services.llm import BaseLLMService, LLMMessage
@@ -11,6 +14,50 @@ MAX_ATTRIBUTES = 8
 MAX_EVIDENCE_LENGTH = 260
 MAX_CITATION_PREVIEW_LENGTH = 320
 SAFE_LLM_FALLBACK_ANSWER = "当前没有找到足够匹配的商品或知识依据，建议你调整预算、品类或偏好后再试。"
+PRODUCT_ID_PATTERN = re.compile(r"\b[a-zA-Z]+_\d+\b")
+URL_PATTERN = re.compile(r"https?://[^\s)）\]】>\"']+")
+
+PURCHASE_ACTION_KEYWORDS = [
+    "已经下单",
+    "已经帮你下单",
+    "已帮你下单",
+    "已加入购物车",
+    "加入购物车",
+    "立即下单",
+    "现在下单",
+    "已完成购买",
+    "已支付",
+    "支付成功",
+    "已锁价",
+    "锁价成功",
+]
+DISCOUNT_HALLUCINATION_KEYWORDS = [
+    "全网最低价",
+    "保证最低价",
+    "一定最低",
+    "官方补贴",
+    "限时优惠",
+    "独家优惠",
+    "优惠券已领取",
+    "我帮你领取优惠券",
+]
+SKINCARE_MEDICAL_CLAIM_KEYWORDS = [
+    "治疗",
+    "治愈",
+    "根治",
+    "药效",
+    "医用疗效",
+    "治好",
+    "修复皮肤病",
+    "治疗痘痘",
+    "治疗湿疹",
+]
+
+
+@dataclass(frozen=True)
+class LLMAnswerValidationResult:
+    is_valid: bool
+    reason: str | None = None
 
 
 class LLMAnswerComposer:
@@ -50,7 +97,82 @@ class LLMAnswerComposer:
         content = response.content.strip()
         if not content:
             return _safe_fallback_answer()
+
+        validation = validate_llm_answer(
+            content,
+            product_candidates=products,
+            citations=citation_list,
+        )
+        if not validation.is_valid:
+            return _safe_fallback_answer()
+
         return content
+
+
+def validate_llm_answer(
+    answer: str,
+    product_candidates: list[ProductCandidate] | None = None,
+    citations: list[Citation] | None = None,
+) -> LLMAnswerValidationResult:
+    normalized = answer.strip()
+    if not normalized:
+        return LLMAnswerValidationResult(False, "empty")
+
+    if normalized == SAFE_LLM_FALLBACK_ANSWER:
+        return LLMAnswerValidationResult(False, "safe_fallback")
+
+    if _contains_any(normalized, PURCHASE_ACTION_KEYWORDS):
+        return LLMAnswerValidationResult(False, "purchase_action")
+
+    if _contains_any(normalized, DISCOUNT_HALLUCINATION_KEYWORDS):
+        return LLMAnswerValidationResult(False, "discount_hallucination")
+
+    if _contains_any(normalized, SKINCARE_MEDICAL_CLAIM_KEYWORDS):
+        return LLMAnswerValidationResult(False, "skincare_medical_claim")
+
+    compact = normalized.strip()
+    if (compact.startswith("{") and compact.endswith("}")) or (
+        compact.startswith("[") and compact.endswith("]")
+    ):
+        return LLMAnswerValidationResult(False, "json_output")
+
+    if "|" in normalized and "---" in normalized and len(normalized.splitlines()) > 1:
+        return LLMAnswerValidationResult(False, "markdown_table")
+
+    products = product_candidates or []
+    if products:
+        allowed_product_ids = {product.product_id for product in products}
+        mentioned_ids = set(PRODUCT_ID_PATTERN.findall(normalized))
+        unknown_ids = mentioned_ids - allowed_product_ids
+        if unknown_ids:
+            return LLMAnswerValidationResult(False, "unknown_product_id")
+
+    unknown_urls = _unknown_urls(normalized, product_candidates=products)
+    if unknown_urls:
+        return LLMAnswerValidationResult(False, "unknown_url")
+
+    return LLMAnswerValidationResult(True)
+
+
+def _contains_any(text: str, keywords: list[str]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
+def _unknown_urls(
+    answer: str,
+    product_candidates: list[ProductCandidate],
+) -> list[str]:
+    allowed_urls = {
+        url
+        for product in product_candidates
+        for url in (product.source_url, product.compare_url)
+        if url
+    }
+    urls = [
+        url.rstrip(".,;:!?。，；：！？")
+        for url in URL_PATTERN.findall(answer)
+    ]
+    return [url for url in urls if url not in allowed_urls]
 
 
 def _build_system_prompt() -> str:

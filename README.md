@@ -103,6 +103,10 @@ from retrieved product candidates and citations. Task 6.3 connects
 `LLMAnswerComposer` to `ChatService` for `shopping_guide` and
 `product_knowledge`; the LLM only generates the `answer` text, while product
 cards and citations still come from retrieval services.
+Task 6.4 adds lightweight LLM answer validation. If the LLM output contains
+purchase actions, unsupported discounts, medical claims, JSON/table output,
+unknown product IDs, or unknown URLs, the composer returns a safe fallback so
+`ChatService` can fall back to the template answer.
 
 ## Retrieval Evaluation
 

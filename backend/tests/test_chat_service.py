@@ -6,12 +6,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.chat.chat_service import ChatService
-from app.chat.llm_answer_composer import SAFE_LLM_FALLBACK_ANSWER
+from app.chat.llm_answer_composer import LLMAnswerComposer, SAFE_LLM_FALLBACK_ANSWER
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.core.db import Base
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
 from app.retrieval.retrieval_service import Citation, ProductCandidate
 from app.services.embedding import MockEmbeddingService
+from app.services.llm import LLMResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -93,6 +94,17 @@ class FakeLLMAnswerComposer:
         if self.should_raise:
             raise RuntimeError("fake llm error")
         return self.answer
+
+
+class GuardRejectingLLMService:
+    provider = "fake"
+
+    def chat(self, messages, *, max_tokens=None, temperature=None) -> LLMResponse:
+        return LLMResponse(
+            content="我已经帮你下单 phone_999。",
+            model="fake-model",
+            provider=self.provider,
+        )
 
 
 def _create_test_session(db_name: str):
@@ -317,6 +329,24 @@ def test_chat_service_falls_back_to_template_when_llm_composer_returns_safe_fall
     response = chat_service.handle_message("budget 3000 camera phone")
 
     assert response.answer
+    assert response.answer != SAFE_LLM_FALLBACK_ANSWER
+    assert len(response.product_cards) == 1
+    assert len(response.citations) == 1
+    assert _step(response, "llm_answer")["status"] == "fallback"
+
+
+def test_chat_service_falls_back_when_real_llm_composer_guard_rejects_answer() -> None:
+    chat_service = _make_chat_service(
+        _shopping_query_result(),
+        product_candidates=_sample_product_candidates(),
+        citations=_sample_citations(),
+        llm_answer_composer=LLMAnswerComposer(GuardRejectingLLMService()),
+    )
+
+    response = chat_service.handle_message("budget 3000 camera phone")
+
+    assert response.answer
+    assert response.answer != "我已经帮你下单 phone_999。"
     assert response.answer != SAFE_LLM_FALLBACK_ANSWER
     assert len(response.product_cards) == 1
     assert len(response.citations) == 1
