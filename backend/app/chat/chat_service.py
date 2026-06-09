@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.chat.llm_answer_composer import LLMAnswerComposer
+from app.chat.llm_answer_composer import LLMAnswerComposer, SAFE_LLM_FALLBACK_ANSWER
 from app.chat.query_understanding import (
     QueryUnderstandingResult,
     QueryUnderstandingService,
@@ -200,7 +200,7 @@ class ChatService:
             )
 
         normalized_answer = llm_answer.strip()
-        if not normalized_answer:
+        if not normalized_answer or normalized_answer == SAFE_LLM_FALLBACK_ANSWER:
             return self._append_response_trace(
                 base_response,
                 {

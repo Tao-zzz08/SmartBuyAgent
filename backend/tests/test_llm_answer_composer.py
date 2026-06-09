@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from app.chat.llm_answer_composer import LLMAnswerComposer
+from app.chat.llm_answer_composer import LLMAnswerComposer, SAFE_LLM_FALLBACK_ANSWER
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.retrieval.retrieval_service import Citation, ProductCandidate
 from app.services.llm import BaseLLMService, LLMMessage, LLMResponse
@@ -132,7 +132,7 @@ def test_compose_returns_fallback_without_products_or_citations() -> None:
     )
 
     assert fake_llm.calls == 0
-    assert "当前没有找到足够匹配的商品或知识依据" in answer
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
 
 
 def test_compose_returns_fallback_when_llm_raises() -> None:
@@ -145,7 +145,7 @@ def test_compose_returns_fallback_when_llm_raises() -> None:
         citations=[],
     )
 
-    assert "当前没有找到足够匹配的商品或知识依据" in answer
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
 
 
 def test_compose_returns_fallback_when_llm_content_empty() -> None:
@@ -158,7 +158,7 @@ def test_compose_returns_fallback_when_llm_content_empty() -> None:
         citations=[],
     )
 
-    assert "当前没有找到足够匹配的商品或知识依据" in answer
+    assert answer == SAFE_LLM_FALLBACK_ANSWER
 
 
 def test_prompt_limits_product_and_citation_count() -> None:

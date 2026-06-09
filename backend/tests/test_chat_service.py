@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.chat.chat_service import ChatService
+from app.chat.llm_answer_composer import SAFE_LLM_FALLBACK_ANSWER
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.core.db import Base
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
@@ -299,6 +300,24 @@ def test_chat_service_falls_back_to_template_when_llm_raises() -> None:
 
     assert response.answer
     assert response.answer != fake_llm.answer
+    assert len(response.product_cards) == 1
+    assert len(response.citations) == 1
+    assert _step(response, "llm_answer")["status"] == "fallback"
+
+
+def test_chat_service_falls_back_to_template_when_llm_composer_returns_safe_fallback() -> None:
+    fake_llm = FakeLLMAnswerComposer(answer=SAFE_LLM_FALLBACK_ANSWER)
+    chat_service = _make_chat_service(
+        _shopping_query_result(),
+        product_candidates=_sample_product_candidates(),
+        citations=_sample_citations(),
+        llm_answer_composer=fake_llm,
+    )
+
+    response = chat_service.handle_message("budget 3000 camera phone")
+
+    assert response.answer
+    assert response.answer != SAFE_LLM_FALLBACK_ANSWER
     assert len(response.product_cards) == 1
     assert len(response.citations) == 1
     assert _step(response, "llm_answer")["status"] == "fallback"

@@ -10,6 +10,7 @@ MAX_CITATIONS = 5
 MAX_ATTRIBUTES = 8
 MAX_EVIDENCE_LENGTH = 260
 MAX_CITATION_PREVIEW_LENGTH = 320
+SAFE_LLM_FALLBACK_ANSWER = "当前没有找到足够匹配的商品或知识依据，建议你调整预算、品类或偏好后再试。"
 
 
 class LLMAnswerComposer:
@@ -154,7 +155,7 @@ def _format_attributes(attributes: dict[str, str]) -> str:
 
 
 def _safe_fallback_answer() -> str:
-    return "当前没有找到足够匹配的商品或知识依据，建议你调整预算、品类或偏好后再试。"
+    return SAFE_LLM_FALLBACK_ANSWER
 
 
 def _truncate_text(text: str | None, limit: int) -> str:
