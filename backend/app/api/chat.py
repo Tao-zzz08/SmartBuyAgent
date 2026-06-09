@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.chat.chat_service import ChatService
 from app.chat.conversation_memory import ConversationMemoryService
+from app.chat.followup_rewriter import FollowUpQueryRewriter
 from app.chat.llm_answer_composer import LLMAnswerComposer
 from app.chat.response_composer import ChatResponse
 from app.core.db import get_db
@@ -55,7 +56,14 @@ def chat(
         llm_answer_composer=llm_answer_composer,
     )
     session_id = request.session_id or uuid4().hex
-    chat_response = chat_service.handle_message(request.query)
+    effective_query, rewrite_trace = _rewrite_follow_up_query(
+        db=db,
+        session_id=request.session_id,
+        query=request.query,
+    )
+    chat_response = chat_service.handle_message(effective_query)
+    if rewrite_trace is not None:
+        chat_response = _prepend_trace(chat_response, rewrite_trace)
     chat_response = _save_conversation_turn(
         db=db,
         session_id=session_id,
@@ -66,6 +74,55 @@ def chat(
         chat_response,
         session_id=session_id,
         include_trace=request.debug,
+    )
+
+
+def _rewrite_follow_up_query(
+    db: Session,
+    session_id: str | None,
+    query: str,
+) -> tuple[str, dict | None]:
+    if not session_id:
+        return query, None
+
+    try:
+        recent_turns = ConversationMemoryService(db).get_recent_turns(
+            session_id=session_id,
+            limit=3,
+        )
+        result = FollowUpQueryRewriter().rewrite(
+            query=query,
+            recent_turns=recent_turns,
+        )
+    except Exception:
+        return query, {
+            "step": "follow_up_rewrite",
+            "status": "failed",
+            "original_query": query,
+            "rewritten_query": query,
+        }
+
+    status = "rewritten" if result.is_follow_up else "not_follow_up"
+    trace_step = {
+        "step": "follow_up_rewrite",
+        "status": status,
+        "original_query": query,
+        "rewritten_query": result.rewritten_query,
+        "reason": result.reason,
+        "source_turn_index": result.source_turn_index,
+        "referenced_product_ids": result.context_used.get("referenced_product_ids", []),
+        "resolved_product_ids": result.context_used.get("resolved_product_ids", []),
+        "context_used": result.context_used,
+    }
+    return result.rewritten_query if result.is_follow_up else query, trace_step
+
+
+def _prepend_trace(response: ChatResponse, trace_step: dict) -> ChatResponse:
+    return ChatResponse(
+        answer=response.answer,
+        product_cards=response.product_cards,
+        citations=response.citations,
+        trace=[trace_step, *response.trace],
     )
 
 

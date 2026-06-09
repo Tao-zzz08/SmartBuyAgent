@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -141,6 +142,42 @@ def _steps(payload: dict) -> set[str]:
     return {step["step"] for step in payload["trace"]}
 
 
+def _trace_step(payload: dict, step_name: str) -> dict:
+    return next(step for step in payload["trace"] if step.get("step") == step_name)
+
+
+def _seed_memory_turn(
+    TestingSessionLocal,
+    session_id: str,
+    product_ids: list[str] | None = None,
+) -> None:
+    db = TestingSessionLocal()
+    try:
+        db.add(ChatSession(session_id=session_id))
+        db.add(
+            ChatTurn(
+                session_id=session_id,
+                turn_index=1,
+                user_query="预算3000，推荐一款拍照好的手机",
+                assistant_answer="answer",
+                intent="shopping_guide",
+                category_id="cat_phone",
+                category_path="数码/手机",
+                budget_min=None,
+                budget_max=3000,
+                preferences_json=json.dumps(["拍照", "续航"], ensure_ascii=False),
+                product_ids_json=json.dumps(
+                    product_ids or ["phone_001", "phone_002", "phone_003"],
+                    ensure_ascii=False,
+                ),
+                citation_chunk_ids_json="[]",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_chat_api_shopping_guide() -> None:
     engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
         "smartbuy_chat_api_shopping_test.db",
@@ -172,6 +209,7 @@ def test_chat_api_shopping_guide() -> None:
         assert "knowledge_retrieval" in steps
         assert "llm_answer" in steps
         assert "response_composer" in steps
+        assert "follow_up_rewrite" not in steps
         assert embedding_service.calls > 0
         assert len(llm_answer_composer.calls) == 1
     finally:
@@ -287,6 +325,143 @@ def test_chat_api_reuses_existing_session_id() -> None:
         _cleanup(engine, db_path, chroma_dir)
 
 
+def test_chat_api_with_session_but_no_history_does_not_rewrite() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_no_history_rewrite_test.db",
+        "chroma_chat_api_no_history_rewrite_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={
+                "query": "预算提高到4000呢",
+                "session_id": "empty_session",
+                "debug": True,
+            },
+        )
+        payload = response.json()
+        rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+
+        assert response.status_code == 200
+        assert rewrite_trace["status"] == "not_follow_up"
+        assert rewrite_trace["reason"] == "no_recent_turns"
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_rewrites_budget_follow_up_and_saves_original_query() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_budget_rewrite_test.db",
+        "chroma_chat_api_budget_rewrite_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={"query": "预算3000，推荐一款拍照好的手机"},
+        )
+        session_id = first_response.json()["session_id"]
+        second_response = client.post(
+            "/api/chat",
+            json={
+                "query": "预算提高到4000呢",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        payload = second_response.json()
+        rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+
+        assert second_response.status_code == 200
+        assert rewrite_trace["status"] == "rewritten"
+        assert rewrite_trace["reason"] == "budget_update"
+        assert "4000" in rewrite_trace["rewritten_query"]
+        assert "手机" in rewrite_trace["rewritten_query"]
+        assert "拍照" in rewrite_trace["rewritten_query"]
+
+        db = TestingSessionLocal()
+        try:
+            turns = db.scalars(
+                select(ChatTurn)
+                .where(ChatTurn.session_id == session_id)
+                .order_by(ChatTurn.turn_index)
+            ).all()
+            assert turns[-1].user_query == "预算提高到4000呢"
+        finally:
+            db.close()
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_rewrites_vague_product_follow_up() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_vague_rewrite_test.db",
+        "chroma_chat_api_vague_rewrite_test",
+    )
+    session_id = "session_vague_rewrite"
+    _seed_memory_turn(
+        TestingSessionLocal,
+        session_id=session_id,
+        product_ids=["phone_001", "phone_002"],
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={
+                "query": "这几款哪个更适合拍照",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        payload = response.json()
+        rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+
+        assert response.status_code == 200
+        assert rewrite_trace["status"] == "rewritten"
+        assert rewrite_trace["reason"] == "vague_product_reference"
+        assert rewrite_trace["referenced_product_ids"] == ["phone_001", "phone_002"]
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_rewrites_ordinal_product_follow_up() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_ordinal_rewrite_test.db",
+        "chroma_chat_api_ordinal_rewrite_test",
+    )
+    session_id = "session_ordinal_rewrite"
+    _seed_memory_turn(
+        TestingSessionLocal,
+        session_id=session_id,
+        product_ids=["phone_001", "phone_002", "phone_003"],
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={
+                "query": "第一个和第二个有什么区别",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        payload = response.json()
+        rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+
+        assert response.status_code == 200
+        assert rewrite_trace["status"] == "rewritten"
+        assert rewrite_trace["reason"] == "ordinal_reference"
+        assert rewrite_trace["resolved_product_ids"] == ["phone_001", "phone_002"]
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
 def test_chat_api_memory_failure_does_not_break_chat(monkeypatch) -> None:
     engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
         "smartbuy_chat_api_memory_failure_test.db",
@@ -316,6 +491,42 @@ def test_chat_api_memory_failure_does_not_break_chat(monkeypatch) -> None:
         assert payload["product_cards"]
         assert payload["citations"]
         assert memory_trace[0]["status"] == "failed"
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_follow_up_memory_read_failure_does_not_break_chat(monkeypatch) -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_rewrite_failure_test.db",
+        "chroma_chat_api_rewrite_failure_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+
+    def fail_get_recent_turns(self, session_id, limit=5):
+        raise RuntimeError("memory read failed")
+
+    monkeypatch.setattr(
+        ConversationMemoryService,
+        "get_recent_turns",
+        fail_get_recent_turns,
+    )
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={
+                "query": "预算提高到4000呢",
+                "session_id": "session_read_failure",
+                "debug": True,
+            },
+        )
+        payload = response.json()
+        rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+
+        assert response.status_code == 200
+        assert payload["answer"]
+        assert rewrite_trace["status"] == "failed"
+        assert rewrite_trace["rewritten_query"] == "预算提高到4000呢"
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

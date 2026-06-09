@@ -119,6 +119,12 @@ Task 7.2 adds a minimal frontend multi-turn experience. The Web Debug page store
 the returned `session_id` in page state, sends it with later `/api/chat` requests,
 and provides a "新会话" action that clears the page messages, latest debug
 response, and current `session_id`.
+Task 7.3 adds rule-based follow-up detection and query rewriting. It only runs
+when a request includes `session_id` and recent turns are available. Budget
+changes, vague references such as "这几款", and ordinal references such as
+"第一个/第二个" are rewritten into clearer queries and exposed in debug trace.
+This stage does not use LLM rewrite and does not constrain retrieval to the
+previous product IDs yet; that is reserved for Task 7.4.
 
 ## Retrieval Evaluation
 
