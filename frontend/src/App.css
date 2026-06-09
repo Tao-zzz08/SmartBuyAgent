@@ -54,6 +54,37 @@ a {
   gap: 12px;
 }
 
+.example-query-group {
+  display: grid;
+  gap: 8px;
+}
+
+.example-title {
+  margin: 0;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.example-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.example-button {
+  border: 1px solid #bdc7d8;
+  background: #f8fafc;
+  color: #1849a9;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.example-button:hover {
+  background: #eef4ff;
+}
+
 .field-label {
   font-weight: 700;
 }
@@ -103,6 +134,12 @@ button:disabled {
 .error-message {
   margin: 14px 0 0;
   color: #b42318;
+  font-weight: 700;
+}
+
+.request-status {
+  margin: 14px 0 0;
+  color: #475467;
   font-weight: 700;
 }
 
@@ -198,6 +235,17 @@ button:disabled {
   margin-bottom: 0;
   color: #475467;
   font-size: 13px;
+}
+
+.trace-item {
+  display: grid;
+  gap: 8px;
+}
+
+.trace-summary {
+  margin: 0;
+  color: #344054;
+  font-weight: 700;
 }
 
 pre {
