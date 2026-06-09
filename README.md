@@ -61,6 +61,29 @@ python ../scripts/import_docs.py
 python ../scripts/rebuild_index.py
 ```
 
+### Embedding Provider
+
+The default index rebuild uses mock embedding:
+
+```bash
+cd backend
+python ../scripts/rebuild_index.py
+```
+
+To use a real OpenAI-compatible embedding service, configure `.env`:
+
+```env
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_DIM=your-model-dimension
+EMBEDDING_API_BASE=https://your-embedding-api.example.com/v1
+EMBEDDING_API_KEY=your-api-key
+EMBEDDING_MODEL=your-embedding-model
+```
+
+After switching embedding provider or model, rebuild Chroma indexes. The indexing
+stage and query stage must use the same embedding provider and dimension. Never
+commit real API keys.
+
 ## Chat API
 
 `POST /api/chat`

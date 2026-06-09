@@ -16,7 +16,7 @@ from app.core.config import settings  # noqa: E402
 from app.core.db import Base, SessionLocal, engine  # noqa: E402
 from app.models import DocumentChunk, Product  # noqa: E402
 from app.retrieval.chroma_indexer import rebuild_all_indexes  # noqa: E402
-from app.services.embedding import MockEmbeddingService  # noqa: E402
+from app.services.embedding import get_embedding_service  # noqa: E402
 import app.models  # noqa: E402,F401
 
 
@@ -44,14 +44,22 @@ def main() -> None:
                 "No document chunks found. Please run python ../scripts/import_docs.py first."
             )
 
+        try:
+            embedding_service = get_embedding_service()
+        except ValueError as exc:
+            raise SystemExit(f"Embedding provider configuration error: {exc}") from exc
+
         stats = rebuild_all_indexes(
             db,
-            embedding_service=MockEmbeddingService(),
+            embedding_service=embedding_service,
             reset=True,
         )
     finally:
         db.close()
 
+    print(f"embedding_provider: {settings.EMBEDDING_PROVIDER}")
+    print(f"embedding_dim: {settings.EMBEDDING_DIM}")
+    print(f"embedding_model: {settings.EMBEDDING_MODEL or '-'}")
     print(f"indexed_products: {stats['product_text']['indexed_products']}")
     print(f"indexed_chunks: {stats['knowledge_docs']['indexed_chunks']}")
     print(f"chroma_dir: {_resolve_chroma_dir().as_posix()}")
