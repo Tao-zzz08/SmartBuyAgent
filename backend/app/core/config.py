@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./data/smartbuy.db"
     CHROMA_DIR: str = "./data/chroma"
     LOG_LEVEL: str = "INFO"
+    EMBEDDING_PROVIDER: str = "mock"
+    EMBEDDING_DIM: int = 32
+    EMBEDDING_API_BASE: str | None = None
+    EMBEDDING_API_KEY: str | None = None
+    EMBEDDING_MODEL: str | None = None
+    EMBEDDING_TIMEOUT_SECONDS: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
