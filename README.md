@@ -85,6 +85,21 @@ stage and query stage must use the same embedding provider and dimension. Never
 commit real API keys. The `/api/chat` query path also uses `get_embedding_service()`,
 so it reads the same embedding provider configuration.
 
+## LLM Provider
+
+The default LLM provider is `mock`, which does not call external APIs. To use an
+OpenAI-compatible Chat Completions service later, configure:
+
+```env
+LLM_PROVIDER=openai_compatible
+LLM_API_BASE=https://your-llm-api.example.com/v1
+LLM_API_KEY=your-api-key
+LLM_MODEL=your-chat-model
+```
+
+Task 6.1 only adds the provider abstraction and tests. LLM answer generation is
+not connected to `ChatService` yet; a later task will add `LLMAnswerComposer`.
+
 ## Retrieval Evaluation
 
 Eval cases are stored in `data/eval/retrieval_eval_cases.json`. They cover product

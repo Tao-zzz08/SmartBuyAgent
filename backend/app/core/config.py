@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     EMBEDDING_API_KEY: str | None = None
     EMBEDDING_MODEL: str | None = None
     EMBEDDING_TIMEOUT_SECONDS: float = 30.0
+    LLM_PROVIDER: str = "mock"
+    LLM_API_BASE: str | None = None
+    LLM_API_KEY: str | None = None
+    LLM_MODEL: str = "mock-chat"
+    LLM_TIMEOUT_SECONDS: float = 30.0
+    LLM_MAX_TOKENS: int = 800
+    LLM_TEMPERATURE: float = 0.2
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
