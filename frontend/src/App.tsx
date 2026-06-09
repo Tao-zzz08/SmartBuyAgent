@@ -1,6 +1,11 @@
 import { useState, type FormEvent } from "react";
 
 import { sendChatMessage, type ChatResponse } from "./api/chat";
+import { AnswerPanel } from "./components/AnswerPanel";
+import { CitationList } from "./components/CitationList";
+import { ProductCardList } from "./components/ProductCardList";
+import { RawJsonPanel } from "./components/RawJsonPanel";
+import { TracePanel } from "./components/TracePanel";
 import "./App.css";
 
 const DEFAULT_QUERY = "预算3000，推荐一款拍照好的手机";
@@ -65,101 +70,11 @@ function App() {
           {error ? <p className="error-message">{error}</p> : null}
         </section>
 
-        <section className="panel">
-          <h2>Answer</h2>
-          <p className="answer-text">{response?.answer ?? "暂无回答"}</p>
-        </section>
-
-        <section className="panel">
-          <h2>Product Cards</h2>
-          {response && response.product_cards.length > 0 ? (
-            <div className="product-list">
-              {response.product_cards.map((card) => (
-                <article className="product-card" key={card.product_id}>
-                  <div className="product-header">
-                    <h3>{card.title}</h3>
-                    <span className="price">¥{card.price}</span>
-                  </div>
-                  <p className="muted">{card.brand ?? "未知品牌"}</p>
-                  <p>{card.recommend_reason}</p>
-
-                  <div className="tag-list">
-                    {card.tags.map((tag) => (
-                      <span className="tag" key={tag}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  <dl className="attribute-list">
-                    {Object.entries(card.attributes).map(([key, value]) => (
-                      <div key={key}>
-                        <dt>{key}</dt>
-                        <dd>{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-
-                  <div className="link-row">
-                    {card.source_url ? (
-                      <a href={card.source_url} target="_blank" rel="noreferrer">
-                        source_url
-                      </a>
-                    ) : null}
-                    {card.compare_url ? (
-                      <a href={card.compare_url} target="_blank" rel="noreferrer">
-                        compare_url
-                      </a>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">暂无商品卡片</p>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Citations</h2>
-          {response && response.citations.length > 0 ? (
-            <div className="citation-list">
-              {response.citations.map((citation) => (
-                <article className="citation-item" key={citation.chunk_id}>
-                  <h3>{citation.title ?? citation.chunk_id}</h3>
-                  <p className="muted">{citation.section ?? "未命名章节"}</p>
-                  <p className="muted">{citation.source_file ?? "未知来源"}</p>
-                  <p>{citation.content_preview}</p>
-                  <p className="score">score: {citation.score.toFixed(4)}</p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">暂无 citation</p>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Trace</h2>
-          {response && response.trace.length > 0 ? (
-            <div className="trace-list">
-              {response.trace.map((step, index) => (
-                <pre key={`${String(step.step ?? "step")}-${index}`}>
-                  {JSON.stringify(step, null, 2)}
-                </pre>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">暂无 trace</p>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Raw JSON</h2>
-          <pre className="raw-json">
-            {response ? JSON.stringify(response, null, 2) : "暂无响应"}
-          </pre>
-        </section>
+        <AnswerPanel answer={response?.answer} />
+        <ProductCardList productCards={response?.product_cards ?? []} />
+        <CitationList citations={response?.citations ?? []} />
+        <TracePanel trace={response?.trace ?? []} />
+        <RawJsonPanel data={response} />
       </div>
     </main>
   );
