@@ -1,7 +1,10 @@
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.chat.chat_service import ChatService
+from app.chat.conversation_memory import ConversationMemoryService
 from app.chat.llm_answer_composer import LLMAnswerComposer
 from app.chat.response_composer import ChatResponse
 from app.core.db import get_db
@@ -51,11 +54,51 @@ def chat(
         chroma_client=chroma_client,
         llm_answer_composer=llm_answer_composer,
     )
+    session_id = request.session_id or uuid4().hex
     chat_response = chat_service.handle_message(request.query)
+    chat_response = _save_conversation_turn(
+        db=db,
+        session_id=session_id,
+        user_query=request.query,
+        chat_response=chat_response,
+    )
     return _to_response_schema(
         chat_response,
-        session_id=request.session_id,
+        session_id=session_id,
         include_trace=request.debug,
+    )
+
+
+def _save_conversation_turn(
+    db: Session,
+    session_id: str,
+    user_query: str,
+    chat_response: ChatResponse,
+) -> ChatResponse:
+    try:
+        turn = ConversationMemoryService(db).save_turn(
+            session_id=session_id,
+            user_query=user_query,
+            chat_response=chat_response,
+        )
+        trace_step = {
+            "step": "conversation_memory",
+            "status": "saved",
+            "session_id": session_id,
+            "turn_index": turn.turn_index,
+        }
+    except Exception:
+        trace_step = {
+            "step": "conversation_memory",
+            "status": "failed",
+            "session_id": session_id,
+        }
+
+    return ChatResponse(
+        answer=chat_response.answer,
+        product_cards=chat_response.product_cards,
+        citations=chat_response.citations,
+        trace=[*chat_response.trace, trace_step],
     )
 
 

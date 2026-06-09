@@ -4,7 +4,7 @@ import shutil
 import sys
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.chat import (
@@ -12,8 +12,10 @@ from app.api.chat import (
     get_chat_embedding_service,
     get_chat_llm_answer_composer,
 )
+from app.chat.conversation_memory import ConversationMemoryService
 from app.core.db import Base, get_db
 from app.main import app
+from app.models import ChatSession, ChatTurn
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
 from app.services.embedding import BaseEmbeddingService, MockEmbeddingService
 
@@ -210,6 +212,110 @@ def test_chat_api_clarification() -> None:
         assert "你想看哪个品类" in payload["answer"]
         assert payload["product_cards"] == []
         assert payload["citations"] == []
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_generates_session_id_when_missing() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_session_generate_test.db",
+        "chroma_chat_api_session_generate_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={"query": "预算3000，推荐一款拍照好的手机", "debug": True},
+        )
+        payload = response.json()
+        session_id = payload["session_id"]
+
+        assert response.status_code == 200
+        assert session_id
+
+        db = TestingSessionLocal()
+        try:
+            assert db.get(ChatSession, session_id) is not None
+            turns = db.scalars(
+                select(ChatTurn).where(ChatTurn.session_id == session_id)
+            ).all()
+            assert len(turns) == 1
+            assert turns[0].turn_index == 1
+        finally:
+            db.close()
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_reuses_existing_session_id() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_session_reuse_test.db",
+        "chroma_chat_api_session_reuse_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={"query": "预算3000，推荐一款拍照好的手机"},
+        )
+        session_id = first_response.json()["session_id"]
+        second_response = client.post(
+            "/api/chat",
+            json={
+                "query": "为什么手机拍照不能只看像素",
+                "session_id": session_id,
+            },
+        )
+
+        assert first_response.status_code == 200
+        assert second_response.status_code == 200
+        assert second_response.json()["session_id"] == session_id
+
+        db = TestingSessionLocal()
+        try:
+            turns = db.scalars(
+                select(ChatTurn)
+                .where(ChatTurn.session_id == session_id)
+                .order_by(ChatTurn.turn_index)
+            ).all()
+            assert [turn.turn_index for turn in turns] == [1, 2]
+        finally:
+            db.close()
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_memory_failure_does_not_break_chat(monkeypatch) -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_memory_failure_test.db",
+        "chroma_chat_api_memory_failure_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+
+    def fail_save_turn(self, session_id, user_query, chat_response):
+        raise RuntimeError("memory is temporarily unavailable")
+
+    monkeypatch.setattr(ConversationMemoryService, "save_turn", fail_save_turn)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={"query": "预算3000，推荐一款拍照好的手机", "debug": True},
+        )
+        payload = response.json()
+        memory_trace = [
+            step
+            for step in payload["trace"]
+            if step.get("step") == "conversation_memory"
+        ]
+
+        assert response.status_code == 200
+        assert payload["answer"]
+        assert payload["product_cards"]
+        assert payload["citations"]
+        assert memory_trace[0]["status"] == "failed"
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

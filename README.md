@@ -108,6 +108,14 @@ purchase actions, unsupported discounts, medical claims, JSON/table output,
 unknown product IDs, or unknown URLs, the composer returns a safe fallback so
 `ChatService` can fall back to the template answer.
 
+## Conversation Memory
+
+Task 7.1 adds session and turn persistence. If `session_id` is missing,
+`/api/chat` generates one. Each turn stores the user query, assistant answer,
+intent/category/budget/preferences, returned product IDs, and citation chunk IDs.
+This stage only stores memory; it does not use memory for query rewriting,
+retrieval, or recommendation decisions yet.
+
 ## Retrieval Evaluation
 
 Eval cases are stored in `data/eval/retrieval_eval_cases.json`. They cover product
