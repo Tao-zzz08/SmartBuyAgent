@@ -115,6 +115,10 @@ Task 7.1 adds session and turn persistence. If `session_id` is missing,
 intent/category/budget/preferences, returned product IDs, and citation chunk IDs.
 This stage only stores memory; it does not use memory for query rewriting,
 retrieval, or recommendation decisions yet.
+Task 7.2 adds a minimal frontend multi-turn experience. The Web Debug page stores
+the returned `session_id` in page state, sends it with later `/api/chat` requests,
+and provides a "新会话" action that clears the page messages, latest debug
+response, and current `session_id`.
 
 ## Retrieval Evaluation
 

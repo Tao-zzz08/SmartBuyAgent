@@ -38,9 +38,17 @@ const EXAMPLE_QUERIES: ExampleQuery[] = [
   },
 ];
 
+type ChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+};
+
 function App() {
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [debug, setDebug] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,17 +58,48 @@ function App() {
     setError(null);
   };
 
+  const handleNewSession = () => {
+    setSessionId(null);
+    setMessages([]);
+    setResponse(null);
+    setError(null);
+    setLoading(false);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
-      const result = await sendChatMessage({ query, debug });
+      const request = sessionId
+        ? { query, debug, session_id: sessionId }
+        : { query, debug };
+      const result = await sendChatMessage(request);
+      const nextSessionId = result.session_id ?? sessionId;
+
+      setSessionId(nextSessionId);
       setResponse(result);
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: currentMessages.length + 1,
+          role: "user",
+          content: query.trim(),
+        },
+        {
+          id: currentMessages.length + 2,
+          role: "assistant",
+          content: result.answer,
+        },
+      ]);
     } catch (err) {
       setResponse(null);
-      setError(err instanceof Error ? `请求失败：${err.message}` : "请求失败：未知错误");
+      setError(
+        err instanceof Error
+          ? `请求失败：${err.message}`
+          : "请求失败：未知错误",
+      );
     } finally {
       setLoading(false);
     }
@@ -70,7 +109,23 @@ function App() {
     <main className="page-shell">
       <div className="debug-layout">
         <header className="page-header">
-          <h1>SmartBuyAgent Web Debug</h1>
+          <div>
+            <h1>SmartBuyAgent Web Debug</h1>
+            <p className="session-line">
+              当前 session_id：
+              <span className={sessionId ? "session-id" : "session-empty"}>
+                {sessionId ?? "未创建"}
+              </span>
+            </p>
+          </div>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={handleNewSession}
+            disabled={loading}
+          >
+            新会话
+          </button>
         </header>
 
         <section className="panel">
@@ -114,6 +169,27 @@ function App() {
             </p>
           ) : null}
           {error ? <p className="error-message">{error}</p> : null}
+        </section>
+
+        <section className="panel">
+          <h2>Conversation</h2>
+          {messages.length > 0 ? (
+            <div className="message-list">
+              {messages.map((message) => (
+                <article
+                  className={`message-item message-${message.role}`}
+                  key={message.id}
+                >
+                  <p className="message-role">
+                    {message.role === "user" ? "User" : "Assistant"}
+                  </p>
+                  <p className="message-content">{message.content}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">暂无对话消息</p>
+          )}
         </section>
 
         <AnswerPanel answer={response?.answer} />

@@ -36,7 +36,7 @@ export type ChatResponse = {
   product_cards: ProductCard[];
   citations: Citation[];
   trace: TraceStep[];
-  session_id: string | null;
+  session_id?: string | null;
 };
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {

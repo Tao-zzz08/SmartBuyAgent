@@ -27,6 +27,10 @@ a {
 }
 
 .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 20px;
 }
 
@@ -34,6 +38,28 @@ a {
   margin: 0;
   font-size: 32px;
   font-weight: 700;
+}
+
+.session-line {
+  margin: 8px 0 0;
+  color: #475467;
+  font-size: 14px;
+}
+
+.session-id,
+.session-empty {
+  margin-left: 6px;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.session-id {
+  color: #1849a9;
+  font-weight: 700;
+}
+
+.session-empty {
+  color: #667085;
 }
 
 .panel {
@@ -129,6 +155,49 @@ button {
 button:disabled {
   background: #8b9ab5;
   cursor: not-allowed;
+}
+
+.secondary-button {
+  border: 1px solid #bdc7d8;
+  background: #ffffff;
+  color: #1849a9;
+}
+
+.secondary-button:disabled {
+  border-color: #d7deea;
+  background: #eef2f7;
+  color: #8b9ab5;
+}
+
+.message-list {
+  display: grid;
+  gap: 10px;
+}
+
+.message-item {
+  border: 1px solid #e0e6f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.message-user {
+  background: #f8fafc;
+}
+
+.message-assistant {
+  background: #ffffff;
+}
+
+.message-role {
+  margin: 0 0 6px;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.message-content {
+  margin: 0;
+  line-height: 1.65;
 }
 
 .error-message {
