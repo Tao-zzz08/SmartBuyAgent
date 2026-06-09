@@ -7,11 +7,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.chat import get_chat_chroma_client
+from app.api.chat import get_chat_chroma_client, get_chat_embedding_service
 from app.core.db import Base, get_db
 from app.main import app
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
-from app.services.embedding import MockEmbeddingService
+from app.services.embedding import BaseEmbeddingService, MockEmbeddingService
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +23,21 @@ if str(SCRIPTS_DIR) not in sys.path:
 from import_categories import import_seed_data  # noqa: E402
 from import_docs import import_documents  # noqa: E402
 from import_products import import_products  # noqa: E402
+
+
+class CountingEmbeddingService(BaseEmbeddingService):
+    def __init__(self, embedding_dim: int = 32) -> None:
+        self.embedding_dim = embedding_dim
+        self.calls = 0
+        self._delegate = MockEmbeddingService(embedding_dim=embedding_dim)
+
+    def embed_text(self, text: str) -> list[float]:
+        self.calls += 1
+        return self._delegate.embed_text(text)
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        self.calls += len(texts)
+        return self._delegate.embed_texts(texts)
 
 
 def _create_test_session(db_name: str):
@@ -61,7 +76,11 @@ def _prepare_api_stack(db_name: str, chroma_dir_name: str):
     return engine, TestingSessionLocal, db_path, chroma_dir, chroma_client
 
 
-def _override_dependencies(TestingSessionLocal, chroma_client) -> None:
+def _override_dependencies(
+    TestingSessionLocal,
+    chroma_client,
+    embedding_service: BaseEmbeddingService | None = None,
+) -> None:
     def override_get_db() -> Generator[Session, None, None]:
         db = TestingSessionLocal()
         try:
@@ -71,6 +90,9 @@ def _override_dependencies(TestingSessionLocal, chroma_client) -> None:
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_chat_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_chat_embedding_service] = (
+        lambda: embedding_service or MockEmbeddingService()
+    )
 
 
 def _cleanup(engine, db_path: Path, chroma_dir: Path) -> None:
@@ -89,7 +111,8 @@ def test_chat_api_shopping_guide() -> None:
         "smartbuy_chat_api_shopping_test.db",
         "chroma_chat_api_shopping_test",
     )
-    _override_dependencies(TestingSessionLocal, chroma_client)
+    embedding_service = CountingEmbeddingService()
+    _override_dependencies(TestingSessionLocal, chroma_client, embedding_service)
     try:
         client = TestClient(app)
         response = client.post(
@@ -106,6 +129,7 @@ def test_chat_api_shopping_guide() -> None:
         assert "product_retrieval" in steps
         assert "knowledge_retrieval" in steps
         assert "response_composer" in steps
+        assert embedding_service.calls > 0
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

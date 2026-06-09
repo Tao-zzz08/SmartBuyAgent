@@ -82,7 +82,8 @@ EMBEDDING_MODEL=your-embedding-model
 
 After switching embedding provider or model, rebuild Chroma indexes. The indexing
 stage and query stage must use the same embedding provider and dimension. Never
-commit real API keys.
+commit real API keys. The `/api/chat` query path also uses `get_embedding_service()`,
+so it reads the same embedding provider configuration.
 
 ## Chat API
 

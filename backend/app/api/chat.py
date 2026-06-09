@@ -11,7 +11,7 @@ from app.schemas.chat import (
     CitationResponse,
     ProductCardResponse,
 )
-from app.services.embedding import MockEmbeddingService
+from app.services.embedding import BaseEmbeddingService, get_embedding_service
 
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -21,15 +21,20 @@ def get_chat_chroma_client():
     return get_chroma_client()
 
 
+def get_chat_embedding_service() -> BaseEmbeddingService:
+    return get_embedding_service()
+
+
 @router.post("/chat", response_model=ChatResponseSchema)
 def chat(
     request: ChatRequest,
     db: Session = Depends(get_db),
     chroma_client=Depends(get_chat_chroma_client),
+    embedding_service: BaseEmbeddingService = Depends(get_chat_embedding_service),
 ) -> ChatResponseSchema:
     chat_service = ChatService(
         db=db,
-        embedding_service=MockEmbeddingService(),
+        embedding_service=embedding_service,
         chroma_client=chroma_client,
     )
     chat_response = chat_service.handle_message(request.query)
