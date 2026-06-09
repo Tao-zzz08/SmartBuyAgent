@@ -98,7 +98,10 @@ LLM_MODEL=your-chat-model
 ```
 
 Task 6.1 only adds the provider abstraction and tests. LLM answer generation is
-not connected to `ChatService` yet; a later task will add `LLMAnswerComposer`.
+not connected to `ChatService` yet.
+Task 6.2 adds `LLMAnswerComposer`, a standalone component that can generate a
+controlled answer from retrieved product candidates and citations. It is not
+connected to `ChatService` yet.
 
 ## Retrieval Evaluation
 
