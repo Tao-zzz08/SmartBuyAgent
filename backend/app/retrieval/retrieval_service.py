@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from typing import Any
 
@@ -24,6 +24,7 @@ class ProductSearchFilters:
     budget_min: int | None = None
     stock_only: bool = True
     brand_exclude: list[str] = field(default_factory=list)
+    preferences: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,204 @@ def _preview(content: str, limit: int = 180) -> str:
     return f"{normalized[:limit].rstrip()}..."
 
 
+PRODUCT_PREFERENCE_KEYWORDS: dict[str, list[str]] = {
+    "拍照": ["拍照", "拍照好", "影像", "像素", "主摄", "三摄", "人像", "防抖", "夜景", "OIS", "拍摄", "旅行拍摄", "社交分享"],
+    "影像": ["影像", "拍照", "主摄", "三摄", "人像", "防抖", "夜景", "OIS"],
+    "续航": ["续航", "续航强", "大电池", "电池", "5000mAh", "5500mAh", "6000mAh", "快充"],
+    "性能": ["性能", "性能强", "游戏", "处理器", "骁龙", "天玑", "高刷", "运行内存"],
+    "游戏": ["游戏", "性能", "性能强", "处理器", "高刷", "散热"],
+    "轻薄": ["轻薄", "小屏", "单手", "便携"],
+    "通勤": ["通勤", "通勤舒适", "舒适", "步行", "久站", "百搭", "办公室"],
+    "防滑": ["防滑", "鞋底", "橡胶", "耐磨", "雨天"],
+    "透气": ["透气", "网面", "飞织", "针织", "清爽"],
+    "运动": ["运动", "跑步", "健走", "缓震", "支撑"],
+    "材质": ["材质", "真皮", "合成革", "织物", "网面", "飞织"],
+    "耐磨": ["耐磨", "耐穿", "橡胶", "鞋底"],
+    "敏感肌": ["敏感肌", "温和", "低刺激", "保湿", "修护", "屏障", "舒缓"],
+    "保湿": ["保湿", "补水", "滋润", "透明质酸", "泛醇", "乳液", "面霜"],
+    "修护": ["修护", "屏障", "舒缓", "神经酰胺", "角鲨烷", "温和"],
+    "控油": ["控油", "清爽", "油皮", "混油", "洁面", "烟酰胺"],
+    "清爽": ["清爽", "控油", "轻薄", "油皮", "乳液"],
+    "温和": ["温和", "敏感肌", "低刺激", "成分精简"],
+}
+
+
+QUERY_KEYWORD_GROUPS: list[tuple[set[str], list[str]]] = [
+    (
+        {"手机", "拍照", "像素", "影像", "防抖", "夜景"},
+        ["手机", "拍照", "像素", "影像", "防抖", "夜景", "主摄", "长焦"],
+    ),
+    (
+        {"续航", "电池", "快充"},
+        ["续航", "电池", "快充", "大电池", "重度用户"],
+    ),
+    (
+        {"敏感肌", "护肤", "成分", "修护", "保湿"},
+        ["敏感肌", "护肤", "温和", "成分", "修护", "保湿", "屏障"],
+    ),
+    (
+        {"鞋", "鞋靴", "尺码", "脚宽", "脚背", "试穿"},
+        ["鞋", "鞋靴", "尺码", "脚宽", "脚背", "试穿", "偏码"],
+    ),
+    (
+        {"通勤", "防滑", "鞋底"},
+        ["通勤", "防滑", "鞋底", "舒适", "耐磨", "步行"],
+    ),
+]
+
+
+def _normalize_text(text: str | None) -> str:
+    return (text or "").lower().replace(" ", "")
+
+
+def _unique_ordered(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = _normalize_text(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(value)
+    return result
+
+
+def _keyword_match_count(text: str, keywords: list[str]) -> int:
+    normalized_text = _normalize_text(text)
+    return sum(
+        1
+        for keyword in keywords
+        if _normalize_text(keyword) and _normalize_text(keyword) in normalized_text
+    )
+
+
+def _expand_preference_keywords(
+    preferences: list[str] | None,
+    query: str,
+) -> list[str]:
+    raw_preferences = preferences or []
+    combined_text = _normalize_text(" ".join([query, *raw_preferences]))
+    keywords = list(raw_preferences)
+
+    for trigger, expanded_keywords in PRODUCT_PREFERENCE_KEYWORDS.items():
+        if _normalize_text(trigger) in combined_text:
+            keywords.extend(expanded_keywords)
+
+    return _unique_ordered(keywords)
+
+
+def _score_product_rerank(
+    candidate: ProductCandidate,
+    query: str,
+    preferences: list[str] | None,
+) -> float:
+    keywords = _expand_preference_keywords(preferences, query)
+    if not keywords:
+        return 0.0
+
+    tag_text = " ".join(candidate.tags)
+    attribute_name_text = " ".join(candidate.attributes.keys())
+    attribute_value_text = " ".join(candidate.attributes.values())
+    title_description_text = " ".join(
+        [
+            candidate.title,
+            candidate.description or "",
+        ]
+    )
+
+    return (
+        _keyword_match_count(tag_text, keywords) * 1.0
+        + _keyword_match_count(attribute_name_text, keywords) * 0.6
+        + _keyword_match_count(attribute_value_text, keywords) * 0.6
+        + _keyword_match_count(title_description_text, keywords) * 0.35
+    )
+
+
+def _rerank_product_candidates(
+    candidates: list[ProductCandidate],
+    query: str,
+    preferences: list[str] | None,
+) -> list[ProductCandidate]:
+    if not candidates:
+        return []
+
+    scored: list[tuple[int, ProductCandidate]] = []
+    for index, candidate in enumerate(candidates):
+        bonus = _score_product_rerank(candidate, query=query, preferences=preferences)
+        scored.append(
+            (
+                index,
+                replace(candidate, score=round(candidate.score + bonus, 4)),
+            )
+        )
+
+    return [
+        candidate
+        for index, candidate in sorted(
+            scored,
+            key=lambda item: (-item[1].score, item[0]),
+        )
+    ]
+
+
+def _extract_query_keywords(query: str, category_id: str | None = None) -> list[str]:
+    normalized_query = _normalize_text(query)
+    keywords: list[str] = []
+
+    if category_id == "cat_phone":
+        keywords.append("手机")
+    elif category_id == "cat_shoes":
+        keywords.extend(["鞋", "鞋靴"])
+    elif category_id == "cat_skincare":
+        keywords.extend(["护肤", "成分"])
+
+    for triggers, expanded_keywords in QUERY_KEYWORD_GROUPS:
+        if any(_normalize_text(trigger) in normalized_query for trigger in triggers):
+            keywords.extend(expanded_keywords)
+
+    return _unique_ordered(keywords)
+
+
+def _score_citation_rerank(
+    citation: Citation,
+    query_keywords: list[str],
+    extra_text: str = "",
+) -> float:
+    if not query_keywords:
+        return 0.0
+
+    citation_text = " ".join(
+        [
+            citation.title or "",
+            citation.section or "",
+            citation.section_path or "",
+            citation.source_file or "",
+            citation.content_preview,
+            extra_text,
+        ]
+    )
+    return _keyword_match_count(citation_text, query_keywords) * 0.4
+
+
+def _with_citation_rerank_score(
+    citation: Citation,
+    query_keywords: list[str],
+    extra_text: str = "",
+) -> Citation:
+    bonus = _score_citation_rerank(citation, query_keywords, extra_text=extra_text)
+    return replace(citation, score=round(citation.score + bonus, 4))
+
+
+def _rerank_citations(citations: list[Citation]) -> list[Citation]:
+    return [
+        citation
+        for index, citation in sorted(
+            enumerate(citations),
+            key=lambda item: (-item[1].score, item[0]),
+        )
+    ]
+
+
 def load_product_detail(
     db: Session,
     product_id: str,
@@ -177,13 +376,15 @@ class ProductRetrievalService:
         allowed_product_ids = {product.id for product in allowed_products}
         candidates: list[ProductCandidate] = []
         seen_product_ids: set[str] = set()
+        candidate_limit = max(top_k * 3, top_k + 5)
 
         collection = _get_chroma_collection(self.chroma_client, PRODUCT_COLLECTION)
         collection_count = collection.count() if collection is not None else 0
         if collection_count > 0:
+            chroma_limit = min(max(semantic_top_k, candidate_limit), collection_count)
             query_result = collection.query(
                 query_embeddings=[self.embedding_service.embed_text(query)],
-                n_results=min(semantic_top_k, collection_count),
+                n_results=chroma_limit,
                 include=["metadatas", "documents", "distances"],
             )
             candidates.extend(
@@ -191,11 +392,11 @@ class ProductRetrievalService:
                     query_result,
                     allowed_product_ids=allowed_product_ids,
                     seen_product_ids=seen_product_ids,
-                    top_k=top_k,
+                    top_k=chroma_limit,
                 )
             )
 
-        if len(candidates) < top_k:
+        if len(candidates) < candidate_limit:
             for product in allowed_products:
                 if product.id in seen_product_ids:
                     continue
@@ -204,10 +405,14 @@ class ProductRetrievalService:
                     continue
                 candidates.append(candidate)
                 seen_product_ids.add(product.id)
-                if len(candidates) >= top_k:
+                if len(candidates) >= candidate_limit:
                     break
 
-        return candidates[:top_k]
+        return _rerank_product_candidates(
+            candidates,
+            query=query,
+            preferences=product_filters.preferences,
+        )[:top_k]
 
     def _filter_products(self, filters: ProductSearchFilters) -> list[Product]:
         statement = select(Product)
@@ -286,9 +491,11 @@ class KnowledgeRetrievalService:
         if collection_count == 0:
             return []
 
+        query_keywords = _extract_query_keywords(query, category_id=category_id)
+        internal_n_results = min(max(top_k * 8, top_k + 20), collection_count)
         query_result = collection.query(
             query_embeddings=[self.embedding_service.embed_text(query)],
-            n_results=min(top_k * 3, collection_count),
+            n_results=internal_n_results,
             include=["metadatas", "distances"],
         )
 
@@ -319,43 +526,48 @@ class KnowledgeRetrievalService:
                 continue
 
             distance = distances[index] if index < len(distances) else None
+            citation = Citation(
+                chunk_id=chunk.id,
+                document_id=chunk.document_id,
+                title=chunk_metadata.get("title"),
+                section=chunk_metadata.get("section"),
+                section_path=chunk_metadata.get("section_path"),
+                source_file=chunk_metadata.get("source_file"),
+                doc_type=effective_doc_type,
+                category_id=effective_category_id,
+                category_path=chunk_metadata.get("category_path")
+                or metadata.get("category_path"),
+                content_preview=_preview(chunk.content),
+                distance=distance,
+                score=distance_to_score(distance),
+            )
             citations.append(
-                Citation(
-                    chunk_id=chunk.id,
-                    document_id=chunk.document_id,
-                    title=chunk_metadata.get("title"),
-                    section=chunk_metadata.get("section"),
-                    section_path=chunk_metadata.get("section_path"),
-                    source_file=chunk_metadata.get("source_file"),
-                    doc_type=effective_doc_type,
-                    category_id=effective_category_id,
-                    category_path=chunk_metadata.get("category_path")
-                    or metadata.get("category_path"),
-                    content_preview=_preview(chunk.content),
-                    distance=distance,
-                    score=distance_to_score(distance),
+                _with_citation_rerank_score(
+                    citation,
+                    query_keywords=query_keywords,
+                    extra_text=chunk.content,
                 )
             )
             seen_chunk_ids.add(chunk.id)
-            if len(citations) >= top_k:
-                break
 
         if len(citations) < top_k:
             citations.extend(
                 self._fallback_citations(
                     category_id=category_id,
                     doc_type=doc_type,
+                    query_keywords=query_keywords,
                     seen_chunk_ids=seen_chunk_ids,
                     limit=top_k - len(citations),
                 )
             )
 
-        return citations
+        return _rerank_citations(citations)[:top_k]
 
     def _fallback_citations(
         self,
         category_id: str | None,
         doc_type: str | None,
+        query_keywords: list[str],
         seen_chunk_ids: set[str],
         limit: int,
     ) -> list[Citation]:
@@ -381,20 +593,25 @@ class KnowledgeRetrievalService:
             if doc_type and effective_doc_type != doc_type:
                 continue
 
+            citation = Citation(
+                chunk_id=chunk.id,
+                document_id=chunk.document_id,
+                title=chunk_metadata.get("title"),
+                section=chunk_metadata.get("section"),
+                section_path=chunk_metadata.get("section_path"),
+                source_file=chunk_metadata.get("source_file"),
+                doc_type=effective_doc_type,
+                category_id=effective_category_id,
+                category_path=chunk_metadata.get("category_path"),
+                content_preview=_preview(chunk.content),
+                distance=None,
+                score=0.0,
+            )
             fallback.append(
-                Citation(
-                    chunk_id=chunk.id,
-                    document_id=chunk.document_id,
-                    title=chunk_metadata.get("title"),
-                    section=chunk_metadata.get("section"),
-                    section_path=chunk_metadata.get("section_path"),
-                    source_file=chunk_metadata.get("source_file"),
-                    doc_type=effective_doc_type,
-                    category_id=effective_category_id,
-                    category_path=chunk_metadata.get("category_path"),
-                    content_preview=_preview(chunk.content),
-                    distance=None,
-                    score=0.0,
+                _with_citation_rerank_score(
+                    citation,
+                    query_keywords=query_keywords,
+                    extra_text=chunk.content,
                 )
             )
             seen_chunk_ids.add(chunk.id)

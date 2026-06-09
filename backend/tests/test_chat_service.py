@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.chat.chat_service import ChatService
+from app.chat.query_understanding import QueryUnderstandingResult
 from app.core.db import Base
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
 from app.services.embedding import MockEmbeddingService
@@ -20,6 +21,28 @@ if str(SCRIPTS_DIR) not in sys.path:
 from import_categories import import_seed_data  # noqa: E402
 from import_docs import import_documents  # noqa: E402
 from import_products import import_products  # noqa: E402
+
+
+class StaticQueryUnderstandingService:
+    def __init__(self, result: QueryUnderstandingResult) -> None:
+        self.result = result
+
+    def understand(self, query: str) -> QueryUnderstandingResult:
+        return self.result
+
+
+class RecordingProductRetrievalService:
+    def __init__(self) -> None:
+        self.last_filters = None
+
+    def search_products(self, query, filters, top_k):
+        self.last_filters = filters
+        return []
+
+
+class EmptyKnowledgeRetrievalService:
+    def search_knowledge(self, query, category_id=None, top_k=3):
+        return []
 
 
 def _create_test_session(db_name: str):
@@ -64,6 +87,37 @@ def _prepare_chat_service(db_name: str, chroma_dir_name: str):
 
 def _steps(response) -> set[str]:
     return {step["step"] for step in response.trace}
+
+
+def test_chat_service_passes_preferences_to_product_retrieval() -> None:
+    query_result = QueryUnderstandingResult(
+        raw_query="预算3000，推荐一款拍照好的手机",
+        intent="shopping_guide",
+        category_id="cat_phone",
+        category_path="数码/手机",
+        budget_min=None,
+        budget_max=3000,
+        preferences=["拍照"],
+        need_clarification=False,
+        clarification_question=None,
+    )
+    product_service = RecordingProductRetrievalService()
+    chat_service = ChatService(
+        db=None,
+        embedding_service=MockEmbeddingService(),
+        chroma_client=object(),
+        query_understanding_service=StaticQueryUnderstandingService(query_result),
+    )
+    chat_service.product_retrieval_service = product_service
+    chat_service.knowledge_retrieval_service = EmptyKnowledgeRetrievalService()
+
+    response = chat_service.handle_message(query_result.raw_query)
+
+    assert response.answer
+    assert product_service.last_filters is not None
+    assert product_service.last_filters.preferences == ["拍照"]
+    assert product_service.last_filters.category_id == "cat_phone"
+    assert product_service.last_filters.budget_max == 3000
 
 
 def test_chat_service_shopping_guide_chain() -> None:

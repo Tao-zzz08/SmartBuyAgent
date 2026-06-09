@@ -110,7 +110,10 @@ python ../scripts/eval_retrieval.py
 The current metrics are lightweight rule checks, not final business metrics. Mock
 embedding can verify the eval workflow, but it does not represent real retrieval
 quality. After switching to real embedding, rebuild Chroma indexes before running
-eval again.
+eval again. Product recall now applies lightweight preference reranking after
+category, budget, and stock filters. Knowledge citation recall applies keyword
+reranking after category/doc_type filtering. Eval reports include failure reasons
+and failure reason counts to make misses easier to inspect.
 
 ## Chat API
 

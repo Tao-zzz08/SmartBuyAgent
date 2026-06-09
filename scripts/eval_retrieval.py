@@ -98,7 +98,13 @@ def evaluate_product_case(
         _citation_texts(citations),
         case.get("expected_doc_keywords") or [],
     )
-    passed = product_hit and category_ok and budget_ok and citation_keyword_hit
+    failure_reasons = _product_failure_reasons(
+        product_hit=product_hit,
+        category_ok=category_ok,
+        budget_ok=budget_ok,
+        citation_keyword_hit=citation_keyword_hit,
+    )
+    passed = not failure_reasons
 
     return {
         "id": case["id"],
@@ -111,6 +117,7 @@ def evaluate_product_case(
         "budget_ok": budget_ok,
         "citation_keyword_hit": citation_keyword_hit,
         "citation_count": len(citations),
+        "failure_reasons": failure_reasons,
     }
 
 
@@ -132,7 +139,11 @@ def evaluate_knowledge_case(
         for citation in citations
         if _field(citation, "source_file")
     ]
-    passed = bool(citations) and citation_keyword_hit
+    failure_reasons = _knowledge_failure_reasons(
+        citation_count=len(citations),
+        citation_keyword_hit=citation_keyword_hit,
+    )
+    passed = not failure_reasons
 
     return {
         "id": case["id"],
@@ -142,6 +153,7 @@ def evaluate_knowledge_case(
         "actual_citation_sources": actual_citation_sources,
         "citation_keyword_hit": citation_keyword_hit,
         "citation_count": len(citations),
+        "failure_reasons": failure_reasons,
     }
 
 
@@ -178,11 +190,14 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
     citation_hits = sum(
         1 for result in citation_results if result.get("citation_keyword_hit")
     )
+    failed_results = [result for result in results if not result["passed"]]
 
     return {
         "total_cases": total_cases,
         "passed_cases": passed_cases,
         "failed_cases": total_cases - passed_cases,
+        "failed_case_ids": [result["id"] for result in failed_results],
+        "failure_reason_counts": _failure_reason_counts(failed_results),
         "product_hit_rate": _rate(product_hits, len(product_results)),
         "citation_keyword_hit_rate": _rate(citation_hits, len(citation_results)),
     }
@@ -207,6 +222,11 @@ def print_report(eval_output: dict[str, Any]) -> None:
             )
             print(f"citation_count: {result['citation_count']}")
             print(f"citation_keyword_hit: {_bool_text(result['citation_keyword_hit'])}")
+
+        if not result["passed"]:
+            print("failure_reasons:")
+            for reason in result.get("failure_reasons", []):
+                print(f"- {reason}")
 
         print()
 
@@ -278,6 +298,44 @@ def _citation_texts(citations: list[Any]) -> list[str]:
             if value:
                 texts.append(str(value))
     return texts
+
+
+def _product_failure_reasons(
+    product_hit: bool,
+    category_ok: bool,
+    budget_ok: bool,
+    citation_keyword_hit: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if not product_hit:
+        reasons.append("expected product ids not found")
+    if not category_ok:
+        reasons.append("category mismatch")
+    if not budget_ok:
+        reasons.append("budget constraint violated")
+    if not citation_keyword_hit:
+        reasons.append("citation keywords not found")
+    return reasons
+
+
+def _knowledge_failure_reasons(
+    citation_count: int,
+    citation_keyword_hit: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if citation_count == 0:
+        reasons.append("no citations returned")
+    if not citation_keyword_hit:
+        reasons.append("citation keywords not found")
+    return reasons
+
+
+def _failure_reason_counts(results: list[EvalResult]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for result in results:
+        for reason in result.get("failure_reasons", []):
+            counts[reason] = counts.get(reason, 0) + 1
+    return counts
 
 
 def _field(obj: Any, name: str, default: Any = None) -> Any:

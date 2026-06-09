@@ -93,6 +93,7 @@ def test_evaluate_product_case_with_fake_services() -> None:
     assert result["category_ok"] is True
     assert result["budget_ok"] is True
     assert result["citation_keyword_hit"] is True
+    assert result["failure_reasons"] == []
     assert product_service.last_filters.category_id == "cat_phone"
     assert product_service.last_filters.budget_max == 3000
     assert product_service.last_top_k == 3
@@ -124,11 +125,71 @@ def test_evaluate_knowledge_case_with_fake_service() -> None:
     assert result["passed"] is True
     assert result["citation_keyword_hit"] is True
     assert result["citation_count"] == 1
+    assert result["failure_reasons"] == []
     assert result["actual_citation_sources"] == [
         "data/knowledge_docs/skincare/skincare_sensitive_skin.md"
     ]
     assert knowledge_service.last_category_id == "cat_skincare"
     assert knowledge_service.last_top_k == 5
+
+
+def test_evaluate_product_case_reports_failure_reasons() -> None:
+    product_service = FakeProductService(
+        [
+            SimpleNamespace(product_id="shoes_001", category_id="cat_shoes", price=3999),
+        ]
+    )
+    knowledge_service = FakeKnowledgeService(
+        [
+            SimpleNamespace(
+                title="鞋靴尺码指南",
+                section="脚型",
+                section_path="鞋靴尺码指南/脚型",
+                source_file="data/knowledge_docs/shoes/shoes_size_guide.md",
+                content_preview="鞋靴需要关注尺码。",
+            )
+        ]
+    )
+    case = {
+        "id": "failing_product",
+        "query": "预算3000，推荐手机",
+        "type": "product",
+        "category_id": "cat_phone",
+        "budget_max": 3000,
+        "expected_product_ids": ["phone_001"],
+        "expected_doc_keywords": ["防抖"],
+        "top_k": 3,
+    }
+
+    result = evaluate_product_case(case, product_service, knowledge_service)
+
+    assert result["passed"] is False
+    assert result["failure_reasons"] == [
+        "expected product ids not found",
+        "category mismatch",
+        "budget constraint violated",
+        "citation keywords not found",
+    ]
+
+
+def test_evaluate_knowledge_case_reports_failure_reasons() -> None:
+    knowledge_service = FakeKnowledgeService([])
+    case = {
+        "id": "failing_knowledge",
+        "query": "鞋靴尺码怎么选",
+        "type": "knowledge",
+        "category_id": "cat_shoes",
+        "expected_doc_keywords": ["尺码"],
+        "top_k": 5,
+    }
+
+    result = evaluate_knowledge_case(case, knowledge_service)
+
+    assert result["passed"] is False
+    assert result["failure_reasons"] == [
+        "no citations returned",
+        "citation keywords not found",
+    ]
 
 
 def test_run_eval_returns_summary_counts() -> None:
@@ -172,5 +233,9 @@ def test_run_eval_returns_summary_counts() -> None:
     assert eval_output["summary"]["total_cases"] == 2
     assert eval_output["summary"]["passed_cases"] == 1
     assert eval_output["summary"]["failed_cases"] == 1
+    assert eval_output["summary"]["failed_case_ids"] == ["failing_knowledge"]
+    assert eval_output["summary"]["failure_reason_counts"] == {
+        "citation keywords not found": 1
+    }
     assert eval_output["summary"]["product_hit_rate"] == 1.0
     assert eval_output["summary"]["citation_keyword_hit_rate"] == 0.5

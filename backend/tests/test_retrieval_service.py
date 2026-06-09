@@ -8,9 +8,14 @@ from sqlalchemy.orm import sessionmaker
 from app.core.db import Base
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
 from app.retrieval.retrieval_service import (
+    Citation,
     KnowledgeRetrievalService,
+    ProductCandidate,
     ProductRetrievalService,
     ProductSearchFilters,
+    _rerank_citations,
+    _rerank_product_candidates,
+    _with_citation_rerank_score,
 )
 from app.services.embedding import MockEmbeddingService
 
@@ -60,6 +65,96 @@ def _prepare_retrieval_stack(db_name: str, chroma_dir_name: str):
     return engine, db, db_path, chroma_dir, chroma_client, embedding_service
 
 
+def test_product_rerank_prioritizes_preference_matches() -> None:
+    generic = ProductCandidate(
+        product_id="phone_generic",
+        title="均衡手机",
+        brand="Test",
+        category_id="cat_phone",
+        price=2500,
+        stock=10,
+        description="日常使用",
+        image_url=None,
+        tags=["性价比"],
+        attributes={"处理器": "中端芯片"},
+        source_url=None,
+        compare_url=None,
+        distance=0.1,
+        score=0.9,
+        product_text="均衡手机",
+    )
+    camera = ProductCandidate(
+        product_id="phone_camera",
+        title="影像手机",
+        brand="Test",
+        category_id="cat_phone",
+        price=2600,
+        stock=10,
+        description="适合旅行拍摄",
+        image_url=None,
+        tags=["拍照好"],
+        attributes={"拍照能力": "OIS 防抖 影像主摄"},
+        source_url=None,
+        compare_url=None,
+        distance=0.9,
+        score=0.1,
+        product_text="影像手机",
+    )
+
+    ranked = _rerank_product_candidates(
+        [generic, camera],
+        query="推荐拍照好的手机",
+        preferences=["拍照"],
+    )
+
+    assert ranked[0].product_id == "phone_camera"
+    assert ranked[0].score > ranked[1].score
+
+
+def test_citation_rerank_prioritizes_keyword_matches() -> None:
+    irrelevant = Citation(
+        chunk_id="chunk_battery",
+        document_id="doc_battery",
+        title="手机续航指南",
+        section="电池容量",
+        section_path="手机续航指南/电池容量",
+        source_file="data/knowledge_docs/phone/phone_battery_guide.md",
+        doc_type="guide",
+        category_id="cat_phone",
+        category_path="数码/手机",
+        content_preview="电池容量和快充会影响重度使用体验。",
+        distance=0.1,
+        score=0.9,
+    )
+    relevant = Citation(
+        chunk_id="chunk_camera",
+        document_id="doc_camera",
+        title="手机拍照选购指南",
+        section="为什么不能只看像素",
+        section_path="手机拍照选购指南/为什么不能只看像素",
+        source_file="data/knowledge_docs/phone/phone_camera_guide.md",
+        doc_type="guide",
+        category_id="cat_phone",
+        category_path="数码/手机",
+        content_preview="拍照还要看影像、防抖和夜景表现。",
+        distance=0.9,
+        score=0.1,
+    )
+
+    reranked = _rerank_citations(
+        [
+            irrelevant,
+            _with_citation_rerank_score(
+                relevant,
+                query_keywords=["像素", "防抖", "影像", "夜景"],
+                extra_text="主摄和防抖会影响成片。",
+            ),
+        ]
+    )
+
+    assert reranked[0].chunk_id == "chunk_camera"
+
+
 def test_product_retrieval_filters_and_returns_candidates() -> None:
     engine, db, db_path, chroma_dir, chroma_client, embedding_service = (
         _prepare_retrieval_stack(
@@ -76,7 +171,11 @@ def test_product_retrieval_filters_and_returns_candidates() -> None:
 
         results = service.search_products(
             query="拍照好的手机",
-            filters=ProductSearchFilters(category_id="cat_phone", budget_max=3000),
+            filters=ProductSearchFilters(
+                category_id="cat_phone",
+                budget_max=3000,
+                preferences=["拍照"],
+            ),
             top_k=3,
         )
 

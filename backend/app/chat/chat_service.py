@@ -60,6 +60,7 @@ class ChatService:
                 budget_min=query_result.budget_min,
                 budget_max=query_result.budget_max,
                 stock_only=True,
+                preferences=query_result.preferences,
             )
             product_candidates = self.product_retrieval_service.search_products(
                 query=query,
