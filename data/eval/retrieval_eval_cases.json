@@ -1,0 +1,86 @@
+[
+  {
+    "id": "phone_camera_under_3000",
+    "query": "预算3000，推荐一款拍照好的手机",
+    "type": "product",
+    "category_id": "cat_phone",
+    "budget_max": 3000,
+    "expected_product_ids": ["phone_001", "phone_002", "phone_003", "phone_004", "phone_010"],
+    "expected_doc_keywords": ["拍照", "影像", "像素", "防抖"],
+    "top_k": 3
+  },
+  {
+    "id": "phone_battery_under_4000",
+    "query": "预算4000，想要续航强的手机",
+    "type": "product",
+    "category_id": "cat_phone",
+    "budget_max": 4000,
+    "expected_product_ids": ["phone_001", "phone_003", "phone_005", "phone_006"],
+    "expected_doc_keywords": ["续航", "电池", "快充", "重度用户"],
+    "top_k": 3
+  },
+  {
+    "id": "shoes_commute_anti_slip_under_500",
+    "query": "500以内，想买一双通勤防滑的鞋",
+    "type": "product",
+    "category_id": "cat_shoes",
+    "budget_max": 500,
+    "expected_product_ids": ["shoes_001", "shoes_002", "shoes_005", "shoes_007"],
+    "expected_doc_keywords": ["通勤", "防滑", "舒适", "鞋底"],
+    "top_k": 3
+  },
+  {
+    "id": "shoes_breathable_sport_under_600",
+    "query": "预算600，推荐透气运动鞋",
+    "type": "product",
+    "category_id": "cat_shoes",
+    "budget_max": 600,
+    "expected_product_ids": ["shoes_003", "shoes_004", "shoes_009"],
+    "expected_doc_keywords": ["透气", "网面", "运动", "材质"],
+    "top_k": 3
+  },
+  {
+    "id": "skincare_sensitive_moisturizing_repair_under_300",
+    "query": "敏感肌用什么保湿修护面霜，预算300以内",
+    "type": "product",
+    "category_id": "cat_skincare",
+    "budget_max": 300,
+    "expected_product_ids": ["skincare_001", "skincare_002", "skincare_010"],
+    "expected_doc_keywords": ["敏感肌", "保湿", "修护", "温和"],
+    "top_k": 3
+  },
+  {
+    "id": "skincare_oil_control_cleanser_under_200",
+    "query": "200以内，控油洁面或清爽护肤怎么选",
+    "type": "product",
+    "category_id": "cat_skincare",
+    "budget_max": 200,
+    "expected_product_ids": ["skincare_003", "skincare_007", "skincare_008"],
+    "expected_doc_keywords": ["控油", "清爽", "洁面", "保湿"],
+    "top_k": 3
+  },
+  {
+    "id": "knowledge_phone_camera_pixels",
+    "query": "为什么手机拍照不能只看像素",
+    "type": "knowledge",
+    "category_id": "cat_phone",
+    "expected_doc_keywords": ["像素", "主摄", "防抖", "夜景"],
+    "top_k": 5
+  },
+  {
+    "id": "knowledge_skincare_sensitive_skin",
+    "query": "敏感肌护肤要注意什么",
+    "type": "knowledge",
+    "category_id": "cat_skincare",
+    "expected_doc_keywords": ["敏感肌", "温和", "成分", "修护"],
+    "top_k": 5
+  },
+  {
+    "id": "knowledge_shoes_size",
+    "query": "鞋靴尺码怎么选",
+    "type": "knowledge",
+    "category_id": "cat_shoes",
+    "expected_doc_keywords": ["尺码", "脚宽", "脚背", "试穿"],
+    "top_k": 5
+  }
+]

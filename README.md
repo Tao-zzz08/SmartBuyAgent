@@ -85,6 +85,33 @@ stage and query stage must use the same embedding provider and dimension. Never
 commit real API keys. The `/api/chat` query path also uses `get_embedding_service()`,
 so it reads the same embedding provider configuration.
 
+## Retrieval Evaluation
+
+Eval cases are stored in `data/eval/retrieval_eval_cases.json`. They cover product
+recall and knowledge citation recall for phone, shoes, and skincare scenarios.
+
+Prepare data and indexes first:
+
+```bash
+cd backend
+python ../scripts/import_categories.py
+python ../scripts/import_products.py --dataset mini
+python ../scripts/import_docs.py
+python ../scripts/rebuild_index.py
+```
+
+Run retrieval eval:
+
+```bash
+cd backend
+python ../scripts/eval_retrieval.py
+```
+
+The current metrics are lightweight rule checks, not final business metrics. Mock
+embedding can verify the eval workflow, but it does not represent real retrieval
+quality. After switching to real embedding, rebuild Chroma indexes before running
+eval again.
+
 ## Chat API
 
 `POST /api/chat`
