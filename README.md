@@ -2,7 +2,7 @@
 
 SmartBuyAgent 是一个面向多品类全新商品的电商智能导购 RAG Agent 系统。MVP 后续会支持商品导入、商品知识库 RAG、LangGraph Agent 编排、SSE 流式输出、商品卡片、Web Debug 和 Web Showcase。
 
-当前已完成阶段 1 的数据库模型、基础分类导入和 mini 商品导入。阶段 2 已新增 17 份 Markdown 知识文档，支持将 Markdown 知识文档导入 `documents` / `document_chunks` 表，并支持使用 mock `EmbeddingService` 将商品文本和文档 chunk 写入 Chroma 的 `product_text` / `knowledge_docs` collection。已新增基础 `RetrievalService`，支持商品候选召回和知识文档 citation 召回。当前还未接入真实 bge-m3 embedding。
+当前已完成阶段 1 的数据库模型、基础分类导入和 mini 商品导入。阶段 2 已新增 17 份 Markdown 知识文档，支持将 Markdown 知识文档导入 `documents` / `document_chunks` 表，并支持使用 mock `EmbeddingService` 将商品文本和文档 chunk 写入 Chroma 的 `product_text` / `knowledge_docs` collection。已新增基础 `RetrievalService`，支持商品候选召回和知识文档 citation 召回。阶段 3 已新增规则版 `QueryUnderstandingService`，用于在不调用 LLM 的情况下解析用户 query 的意图、品类、预算和偏好。当前还未接入真实 bge-m3 embedding。
 
 ## Start Backend
 
@@ -83,7 +83,7 @@ npm run dev
 - 300 条 demo 商品数据
 - 真实 embedding
 - LLM 回答生成
-- Agent
+- LangGraph Agent
 - SSE
 - Web Debug
 - Web Showcase
