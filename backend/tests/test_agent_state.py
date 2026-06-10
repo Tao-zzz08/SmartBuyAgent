@@ -17,11 +17,14 @@ def test_create_initial_agent_state() -> None:
     assert state.budget_min is None
     assert state.budget_max is None
     assert state.preferences == []
+    assert state.need_clarification is False
+    assert state.clarification_question is None
     assert state.product_candidates == []
     assert state.citations == []
     assert state.product_cards == []
     assert state.answer is None
     assert state.recent_turns == []
+    assert state.query_result is None
     assert state.rewrite_result is None
     assert state.compare_context is None
     assert state.trace == []

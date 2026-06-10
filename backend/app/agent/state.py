@@ -15,11 +15,14 @@ class AgentState:
     budget_min: int | None = None
     budget_max: int | None = None
     preferences: list[str] = field(default_factory=list)
+    need_clarification: bool = False
+    clarification_question: str | None = None
     product_candidates: list[Any] = field(default_factory=list)
     citations: list[Any] = field(default_factory=list)
     product_cards: list[Any] = field(default_factory=list)
     answer: str | None = None
     recent_turns: list[Any] = field(default_factory=list)
+    query_result: Any | None = None
     rewrite_result: Any | None = None
     compare_context: Any | None = None
     trace: list[dict[str, Any]] = field(default_factory=list)

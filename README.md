@@ -137,6 +137,10 @@ Stage 8.1 adds `AgentState` and stub agent nodes as preparation for LangGraph.
 The current `/api/chat` path still uses `ChatService` directly. No runtime
 behavior is changed yet, and the skeleton does not call retrieval, LLM, or
 database services.
+Stage 8.2 implements executable Agent nodes by reusing the existing
+`QueryUnderstandingService`, retrieval services, `ProductComparisonService`,
+`ResponseComposer`, and optional `LLMAnswerComposer`. The runtime `/api/chat`
+path still uses `ChatService` directly; LangGraph is not connected yet.
 
 ## Retrieval Evaluation
 
