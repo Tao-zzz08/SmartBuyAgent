@@ -1,6 +1,8 @@
+import json
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.chat.chat_service import ChatService
@@ -72,6 +74,57 @@ def chat(
     )
 
 
+<<<<<<< Updated upstream
+=======
+@router.post("/chat/stream")
+def chat_stream(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    chroma_client=Depends(get_chat_chroma_client),
+    embedding_service: BaseEmbeddingService = Depends(get_chat_embedding_service),
+    llm_answer_composer: LLMAnswerComposer = Depends(get_chat_llm_answer_composer),
+) -> StreamingResponse:
+    def event_generator():
+        session_id = request.session_id or uuid4().hex
+        yield _sse_event("session", {"session_id": session_id})
+
+        try:
+            chat_service = ChatService(
+                db=db,
+                embedding_service=embedding_service,
+                chroma_client=chroma_client,
+                llm_answer_composer=llm_answer_composer,
+            )
+            chat_response = chat_service.handle_message(
+                query=request.query,
+                session_id=request.session_id,
+            )
+            chat_response = _save_conversation_turn(
+                db=db,
+                session_id=session_id,
+                user_query=request.query,
+                chat_response=chat_response,
+            )
+
+            if request.debug:
+                for trace_step in chat_response.trace:
+                    yield _sse_event("trace", trace_step)
+
+            response_schema = _to_response_schema(
+                chat_response,
+                session_id=session_id,
+                include_trace=request.debug,
+            )
+            yield _sse_event("result", response_schema.model_dump())
+            yield _sse_event("done", {"status": "ok"})
+        except Exception:
+            yield _sse_event("error", {"message": "chat stream failed"})
+            yield _sse_event("done", {"status": "error"})
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+>>>>>>> Stashed changes
 def _save_conversation_turn(
     db: Session,
     session_id: str,
@@ -141,4 +194,11 @@ def _to_response_schema(
         ],
         trace=response.trace if include_trace else [],
         session_id=session_id,
+    )
+
+
+def _sse_event(event: str, data: dict) -> str:
+    return (
+        f"event: {event}\n"
+        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
     )

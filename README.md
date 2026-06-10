@@ -148,6 +148,13 @@ reserved for Stage 8.4.
 Stage 8.4 routes `ChatService` through `AgentWorkflow`. The runtime `/api/chat`
 path now uses the LangGraph-based agent orchestration while preserving the
 existing response schema and conversation memory behavior.
+<<<<<<< Updated upstream
+=======
+Stage 9.1 adds a backend SSE endpoint `/api/chat/stream`. It streams `session`,
+`trace`, `result`, `done`, and `error` events using `text/event-stream`. The
+current implementation runs AgentWorkflow first and then emits trace events in
+order; frontend SSE integration is reserved for Stage 9.2.
+>>>>>>> Stashed changes
 
 ## Retrieval Evaluation
 
@@ -207,6 +214,18 @@ Response contains:
 - `trace`
 - `session_id`
 
+`POST /api/chat/stream`
+
+Response: `text/event-stream`
+
+Events:
+
+- `session`: returns the generated or reused `session_id`
+- `trace`: emits each trace step when `debug=true`
+- `result`: returns the final `answer`, `product_cards`, `citations`, `trace`, and `session_id`
+- `done`: marks stream completion
+- `error`: reports stream-level failures
+
 ## Knowledge Documents
 
 Markdown seed documents are stored under `data/knowledge_docs/`:
@@ -230,11 +249,16 @@ npm run dev
 - 真实 embedding
 - 生产级 LLM 回答质量优化
 - LangGraph Agent
-- SSE
+- Frontend SSE integration
 - 完整 Web Debug 高级功能
 - Web Showcase
 
 ## Next Stage
 
+<<<<<<< Updated upstream
 Stage 9 next: add SSE streaming and Web Debug trace streaming, then continue
 toward advanced Web Debug / Showcase flows.
+=======
+Stage 9 next: connect the frontend Web Debug page to `/api/chat/stream`, then
+continue toward streaming trace panels and advanced Web Debug / Showcase flows.
+>>>>>>> Stashed changes

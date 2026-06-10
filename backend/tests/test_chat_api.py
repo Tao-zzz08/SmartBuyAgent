@@ -13,6 +13,7 @@ from app.api.chat import (
     get_chat_embedding_service,
     get_chat_llm_answer_composer,
 )
+from app.chat.chat_service import ChatService
 from app.chat.conversation_memory import ConversationMemoryService
 from app.core.db import Base, get_db
 from app.main import app
@@ -144,6 +145,33 @@ def _steps(payload: dict) -> set[str]:
 
 def _trace_step(payload: dict, step_name: str) -> dict:
     return next(step for step in payload["trace"] if step.get("step") == step_name)
+
+
+def _sse_events(text: str) -> list[dict]:
+    events = []
+    for block in text.strip().split("\n\n"):
+        if not block.strip():
+            continue
+
+        event_name = None
+        data = None
+        for line in block.splitlines():
+            if line.startswith("event: "):
+                event_name = line.removeprefix("event: ").strip()
+            elif line.startswith("data: "):
+                data = json.loads(line.removeprefix("data: "))
+
+        if event_name is not None and data is not None:
+            events.append({"event": event_name, "data": data})
+    return events
+
+
+def _sse_event_data(events: list[dict], event_name: str) -> dict:
+    return next(event["data"] for event in events if event["event"] == event_name)
+
+
+def _sse_event_datas(events: list[dict], event_name: str) -> list[dict]:
+    return [event["data"] for event in events if event["event"] == event_name]
 
 
 def _seed_memory_turn(
@@ -586,6 +614,236 @@ def test_chat_api_follow_up_memory_read_failure_does_not_break_chat(monkeypatch)
         assert payload["answer"]
         assert rewrite_trace["status"] == "failed"
         assert rewrite_trace["rewritten_query"] == "预算提高到4000呢"
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_shopping_guide() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_shopping_test.db",
+        "chroma_chat_stream_shopping_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a",
+                "debug": True,
+            },
+        )
+        events = _sse_events(response.text)
+        event_names = [event["event"] for event in events]
+        result = _sse_event_data(events, "result")
+
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        assert "session" in event_names
+        assert "trace" in event_names
+        assert "result" in event_names
+        assert "done" in event_names
+        assert result["answer"]
+        assert result["product_cards"]
+        assert result["citations"]
+        assert result["session_id"]
+        assert _sse_event_data(events, "done")["status"] == "ok"
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_generates_session_id() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_session_generate_test.db",
+        "chroma_chat_stream_session_generate_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a"
+            },
+        )
+        events = _sse_events(response.text)
+        session_id = _sse_event_data(events, "session")["session_id"]
+        result = _sse_event_data(events, "result")
+
+        assert response.status_code == 200
+        assert session_id
+        assert result["session_id"] == session_id
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_reuses_session_id() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_session_reuse_test.db",
+        "chroma_chat_stream_session_reuse_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a"
+            },
+        )
+        session_id = first_response.json()["session_id"]
+        stream_response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u4e3a\u4ec0\u4e48\u624b\u673a\u62cd\u7167\u4e0d\u80fd\u53ea\u770b\u50cf\u7d20",
+                "session_id": session_id,
+            },
+        )
+        events = _sse_events(stream_response.text)
+
+        assert first_response.status_code == 200
+        assert stream_response.status_code == 200
+        assert _sse_event_data(events, "session")["session_id"] == session_id
+        assert _sse_event_data(events, "result")["session_id"] == session_id
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_follow_up_budget_rewrite() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_budget_rewrite_test.db",
+        "chroma_chat_stream_budget_rewrite_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a"
+            },
+        )
+        session_id = first_response.json()["session_id"]
+        stream_response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u9884\u7b97\u63d0\u9ad8\u52304000\u5462",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        events = _sse_events(stream_response.text)
+        result = _sse_event_data(events, "result")
+        rewrite_trace = _trace_step(result, "follow_up_rewrite")
+
+        assert stream_response.status_code == 200
+        assert "follow_up_rewrite" in stream_response.text
+        assert rewrite_trace["status"] == "rewritten"
+        assert "4000" in rewrite_trace["rewritten_query"]
+        assert "\u624b\u673a" in rewrite_trace["rewritten_query"]
+        assert "\u62cd\u7167" in rewrite_trace["rewritten_query"]
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_follow_up_compare() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_compare_test.db",
+        "chroma_chat_stream_compare_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a"
+            },
+        )
+        first_payload = first_response.json()
+        session_id = first_payload["session_id"]
+        first_two_ids = [
+            product["product_id"] for product in first_payload["product_cards"][:2]
+        ]
+
+        stream_response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u7b2c\u4e00\u4e2a\u548c\u7b2c\u4e8c\u4e2a\u6709\u4ec0\u4e48\u533a\u522b",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        events = _sse_events(stream_response.text)
+        result = _sse_event_data(events, "result")
+        comparison_trace = _trace_step(result, "product_comparison")
+        returned_ids = [product["product_id"] for product in result["product_cards"]]
+
+        assert stream_response.status_code == 200
+        assert "product_comparison" in stream_response.text
+        assert comparison_trace["status"] == "compared"
+        assert returned_ids == first_two_ids
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_memory_failure_does_not_break_stream(monkeypatch) -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_memory_failure_test.db",
+        "chroma_chat_stream_memory_failure_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+
+    def fail_save_turn(self, session_id, user_query, chat_response):
+        raise RuntimeError("memory is temporarily unavailable")
+
+    monkeypatch.setattr(ConversationMemoryService, "save_turn", fail_save_turn)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a",
+                "debug": True,
+            },
+        )
+        events = _sse_events(response.text)
+        result = _sse_event_data(events, "result")
+        memory_trace = _trace_step(result, "conversation_memory")
+
+        assert response.status_code == 200
+        assert memory_trace["status"] == "failed"
+        assert "conversation_memory" in response.text
+        assert _sse_event_data(events, "done")["status"] == "ok"
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_emits_error_event_when_chat_service_raises(monkeypatch) -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_error_test.db",
+        "chroma_chat_stream_error_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+
+    def fail_handle_message(self, query, session_id=None, compare_context=None):
+        raise RuntimeError("stream workflow failed")
+
+    monkeypatch.setattr(ChatService, "handle_message", fail_handle_message)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a"
+            },
+        )
+        events = _sse_events(response.text)
+
+        assert response.status_code == 200
+        assert _sse_event_data(events, "error")["message"] == "chat stream failed"
+        assert _sse_event_data(events, "done")["status"] == "error"
+        assert _sse_event_datas(events, "result") == []
     finally:
         _cleanup(engine, db_path, chroma_dir)
 
