@@ -205,11 +205,13 @@ def test_chat_api_shopping_guide() -> None:
         assert 0 < len(payload["product_cards"]) <= 3
         assert len(payload["citations"]) > 0
         assert "query_understanding" in steps
+        assert "agent_node" in steps
         assert "product_retrieval" in steps
         assert "knowledge_retrieval" in steps
         assert "llm_answer" in steps
         assert "response_composer" in steps
-        assert "follow_up_rewrite" not in steps
+        assert "follow_up_rewrite" in steps
+        assert _trace_step(payload, "follow_up_rewrite")["status"] == "skipped"
         assert embedding_service.calls > 0
         assert len(llm_answer_composer.calls) == 1
     finally:

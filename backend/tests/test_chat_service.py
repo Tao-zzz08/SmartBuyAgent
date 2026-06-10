@@ -5,6 +5,7 @@ import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.agent.workflow import AgentWorkflow
 from app.chat.chat_service import ChatService
 from app.chat.llm_answer_composer import LLMAnswerComposer, SAFE_LLM_FALLBACK_ANSWER
 from app.chat.query_understanding import QueryUnderstandingResult
@@ -499,3 +500,28 @@ def test_chat_service_compare_not_implemented() -> None:
         engine.dispose()
         db_path.unlink(missing_ok=True)
         shutil.rmtree(chroma_dir, ignore_errors=True)
+
+
+def test_chat_service_returns_fallback_when_agent_workflow_raises(monkeypatch) -> None:
+    def fail_run(self, query, session_id=None, compare_context=None):
+        raise RuntimeError("workflow failed")
+
+    monkeypatch.setattr(AgentWorkflow, "run", fail_run)
+    chat_service = ChatService(
+        db=None,
+        embedding_service=MockEmbeddingService(),
+        chroma_client=object(),
+    )
+
+    response = chat_service.handle_message("预算3000，推荐一款拍照好的手机")
+
+    assert response.answer
+    assert response.product_cards == []
+    assert response.citations == []
+    assert response.trace == [
+        {
+            "step": "agent_workflow",
+            "status": "failed",
+            "error": "workflow failed",
+        }
+    ]

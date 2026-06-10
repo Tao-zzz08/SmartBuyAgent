@@ -7,7 +7,10 @@ from app.agent.state import AgentState
 from app.chat.followup_rewriter import FollowUpQueryRewriter
 from app.chat.llm_answer_composer import SAFE_LLM_FALLBACK_ANSWER
 from app.chat.product_comparison import CompareContext, ProductComparisonService
-from app.chat.query_understanding import QueryUnderstandingService
+from app.chat.query_understanding import (
+    QueryUnderstandingResult,
+    QueryUnderstandingService,
+)
 from app.chat.response_composer import ChatResponse, ResponseComposer
 from app.retrieval.retrieval_service import (
     KnowledgeRetrievalService,
@@ -66,13 +69,30 @@ def follow_up_rewrite_node(
     if context is None:
         return append_trace(state, "follow_up_rewrite")
 
-    if not state.session_id or not state.recent_turns:
+    if not state.session_id:
         _append_step(
             state,
             "follow_up_rewrite",
             status="skipped",
             original_query=state.original_query,
             rewritten_query=state.effective_query,
+        )
+        return state
+
+    if not state.recent_turns:
+        load_context_failed = any(
+            error.startswith("load_context:") for error in state.errors
+        )
+        _append_step(
+            state,
+            "follow_up_rewrite",
+            status="failed" if load_context_failed else "not_follow_up",
+            original_query=state.original_query,
+            rewritten_query=state.effective_query,
+            reason="load_context_failed" if load_context_failed else "no_recent_turns",
+            referenced_product_ids=[],
+            resolved_product_ids=[],
+            context_used={},
         )
         return state
 
@@ -268,7 +288,33 @@ def compare_node(
         state.product_candidates = result.product_candidates
         state.answer = result.answer
         state.preferences = result.focus_preferences
+        if result.product_candidates:
+            state.category_id = result.product_candidates[0].category_id
+        state.query_result = QueryUnderstandingResult(
+            raw_query=state.effective_query,
+            intent="shopping_guide",
+            category_id=state.category_id,
+            category_path=state.category_path,
+            budget_min=state.budget_min,
+            budget_max=state.budget_max,
+            preferences=result.focus_preferences,
+            need_clarification=False,
+            clarification_question=None,
+        )
         state.trace.append(result.trace)
+        knowledge_service = _knowledge_retrieval_service(context)
+        if knowledge_service is not None and state.category_id:
+            state.citations = knowledge_service.search_knowledge(
+                query=state.effective_query,
+                category_id=state.category_id,
+                top_k=3,
+            )
+            _append_step(
+                state,
+                "knowledge_retrieval",
+                category_id=state.category_id,
+                citation_count=len(state.citations),
+            )
         return state
     except Exception as exc:
         state.errors.append(f"compare: {exc}")
@@ -477,11 +523,14 @@ def _compose_with_optional_llm(
     context: AgentRuntimeContext,
     base_response: ChatResponse,
 ) -> ChatResponse:
-    if (
-        context.llm_answer_composer is None
-        or state.intent not in {"shopping_guide", "product_knowledge"}
-    ):
+    if state.intent not in {"shopping_guide", "product_knowledge"}:
         return base_response
+
+    if context.llm_answer_composer is None:
+        return _append_response_trace(
+            base_response,
+            {"step": "llm_answer", "enabled": False, "status": "disabled"},
+        )
 
     try:
         llm_answer = context.llm_answer_composer.compose(

@@ -145,6 +145,9 @@ Stage 8.3 adds a LangGraph-based `AgentWorkflow` that orchestrates the executabl
 agent nodes. The workflow is independently testable, but the runtime `/api/chat`
 path still uses `ChatService` directly. Switching `/api/chat` to AgentWorkflow is
 reserved for Stage 8.4.
+Stage 8.4 routes `ChatService` through `AgentWorkflow`. The runtime `/api/chat`
+path now uses the LangGraph-based agent orchestration while preserving the
+existing response schema and conversation memory behavior.
 
 ## Retrieval Evaluation
 
@@ -233,5 +236,5 @@ npm run dev
 
 ## Next Stage
 
-Stage 8 next: switch `/api/chat` to the AgentWorkflow behind a compatibility
-layer, then upgrade SSE and advanced Web Debug / Showcase flows.
+Stage 9 next: add SSE streaming and Web Debug trace streaming, then continue
+toward advanced Web Debug / Showcase flows.

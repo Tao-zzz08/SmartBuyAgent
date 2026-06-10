@@ -41,8 +41,14 @@ class AgentWorkflow:
         self.context = context
         self._graph = self._build_graph().compile()
 
-    def run(self, query: str, session_id: str | None = None) -> AgentState:
+    def run(
+        self,
+        query: str,
+        session_id: str | None = None,
+        compare_context: CompareContext | None = None,
+    ) -> AgentState:
         initial_state = create_initial_agent_state(query=query, session_id=session_id)
+        initial_state.compare_context = compare_context
         result = self._graph.invoke({"state": initial_state})
         return result["state"]
 
