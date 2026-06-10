@@ -1,0 +1,47 @@
+[
+  {
+    "id": "budget_follow_up_phone",
+    "turns": [
+      "预算3000，推荐一款拍照好的手机",
+      "预算提高到4000呢"
+    ],
+    "expectations": {
+      "second_turn_trace_steps": ["follow_up_rewrite"],
+      "rewritten_query_contains": ["4000", "手机", "拍照"]
+    }
+  },
+  {
+    "id": "vague_reference_comparison_phone",
+    "turns": [
+      "预算3000，推荐一款拍照好的手机",
+      "这几款哪个更适合拍照"
+    ],
+    "expectations": {
+      "second_turn_trace_steps": ["follow_up_rewrite", "product_comparison"],
+      "comparison_source": "referenced_product_ids",
+      "product_cards_subset_of_first_turn": true
+    }
+  },
+  {
+    "id": "ordinal_comparison_phone",
+    "turns": [
+      "预算3000，推荐一款拍照好的手机",
+      "第一个和第二个有什么区别"
+    ],
+    "expectations": {
+      "second_turn_trace_steps": ["follow_up_rewrite", "product_comparison"],
+      "comparison_source": "resolved_product_ids",
+      "product_cards_match_resolved_product_ids": true
+    }
+  },
+  {
+    "id": "single_turn_shoes_no_comparison",
+    "turns": [
+      "500以内，想买一双通勤防滑的鞋"
+    ],
+    "expectations": {
+      "trace_steps_absent": ["product_comparison"],
+      "min_product_cards": 1
+    }
+  }
+]

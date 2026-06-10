@@ -9,6 +9,7 @@ from app.chat.query_understanding import (
     QueryUnderstandingResult,
     QueryUnderstandingService,
 )
+from app.chat.product_comparison import CompareContext, ProductComparisonService
 from app.chat.response_composer import ChatResponse, ResponseComposer
 from app.retrieval.retrieval_service import (
     Citation,
@@ -48,10 +49,36 @@ class ChatService:
             embedding_service=embedding_service,
             chroma_client=chroma_client,
         )
+        self.product_comparison_service = ProductComparisonService(db=db)
 
-    def handle_message(self, query: str) -> ChatResponse:
+    def handle_message(
+        self,
+        query: str,
+        compare_context: CompareContext | None = None,
+    ) -> ChatResponse:
         query_result = self.query_understanding_service.understand(query)
         trace: list[dict[str, Any]] = [self._query_understanding_trace(query_result)]
+
+        if compare_context is not None and compare_context.product_ids:
+            try:
+                return self._handle_product_comparison(
+                    query=query,
+                    query_result=query_result,
+                    compare_context=compare_context,
+                    trace=trace,
+                )
+            except Exception:
+                trace.append(
+                    {
+                        "step": "product_comparison",
+                        "status": "failed",
+                        "source": compare_context.source,
+                        "requested_product_ids": compare_context.product_ids,
+                        "returned_product_ids": [],
+                        "missing_product_ids": [],
+                        "focus_preferences": compare_context.focus_preferences,
+                    }
+                )
 
         if query_result.need_clarification:
             return self._with_trace(self.response_composer.compose(query_result), trace)
@@ -137,6 +164,63 @@ class ChatService:
             return self._with_trace(response, trace)
 
         return self._with_trace(self.response_composer.compose(query_result), trace)
+
+    def _handle_product_comparison(
+        self,
+        query: str,
+        query_result: QueryUnderstandingResult,
+        compare_context: CompareContext,
+        trace: list[dict[str, Any]],
+    ) -> ChatResponse:
+        comparison = self.product_comparison_service.compare(
+            query=query,
+            product_ids=compare_context.product_ids,
+            focus_preferences=compare_context.focus_preferences,
+            source=compare_context.source,
+        )
+        trace.append(comparison.trace)
+
+        category_id = (
+            comparison.product_candidates[0].category_id
+            if comparison.product_candidates
+            else query_result.category_id
+        )
+        citations = self.knowledge_retrieval_service.search_knowledge(
+            query=query,
+            category_id=category_id,
+            top_k=3,
+        ) if category_id else []
+        trace.append(
+            {
+                "step": "knowledge_retrieval",
+                "category_id": category_id,
+                "citation_count": len(citations),
+            }
+        )
+
+        compare_query_result = QueryUnderstandingResult(
+            raw_query=query_result.raw_query,
+            intent="shopping_guide",
+            category_id=category_id,
+            category_path=query_result.category_path,
+            budget_min=query_result.budget_min,
+            budget_max=query_result.budget_max,
+            preferences=comparison.focus_preferences,
+            need_clarification=False,
+            clarification_question=None,
+        )
+        base_response = self.response_composer.compose(
+            compare_query_result,
+            product_candidates=comparison.product_candidates,
+            citations=citations,
+        )
+        response = ChatResponse(
+            answer=comparison.answer,
+            product_cards=base_response.product_cards,
+            citations=base_response.citations,
+            trace=base_response.trace,
+        )
+        return self._with_trace(response, trace)
 
     @staticmethod
     def _query_understanding_trace(

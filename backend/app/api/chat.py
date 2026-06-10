@@ -7,6 +7,7 @@ from app.chat.chat_service import ChatService
 from app.chat.conversation_memory import ConversationMemoryService
 from app.chat.followup_rewriter import FollowUpQueryRewriter
 from app.chat.llm_answer_composer import LLMAnswerComposer
+from app.chat.product_comparison import CompareContext
 from app.chat.response_composer import ChatResponse
 from app.core.db import get_db
 from app.retrieval.chroma_indexer import get_chroma_client
@@ -56,12 +57,15 @@ def chat(
         llm_answer_composer=llm_answer_composer,
     )
     session_id = request.session_id or uuid4().hex
-    effective_query, rewrite_trace = _rewrite_follow_up_query(
+    effective_query, rewrite_trace, compare_context = _rewrite_follow_up_query(
         db=db,
         session_id=request.session_id,
         query=request.query,
     )
-    chat_response = chat_service.handle_message(effective_query)
+    chat_response = chat_service.handle_message(
+        effective_query,
+        compare_context=compare_context,
+    )
     if rewrite_trace is not None:
         chat_response = _prepend_trace(chat_response, rewrite_trace)
     chat_response = _save_conversation_turn(
@@ -81,9 +85,9 @@ def _rewrite_follow_up_query(
     db: Session,
     session_id: str | None,
     query: str,
-) -> tuple[str, dict | None]:
+) -> tuple[str, dict | None, CompareContext | None]:
     if not session_id:
-        return query, None
+        return query, None, None
 
     try:
         recent_turns = ConversationMemoryService(db).get_recent_turns(
@@ -100,9 +104,10 @@ def _rewrite_follow_up_query(
             "status": "failed",
             "original_query": query,
             "rewritten_query": query,
-        }
+        }, None
 
     status = "rewritten" if result.is_follow_up else "not_follow_up"
+    compare_context = _build_compare_context(result)
     trace_step = {
         "step": "follow_up_rewrite",
         "status": status,
@@ -114,7 +119,36 @@ def _rewrite_follow_up_query(
         "resolved_product_ids": result.context_used.get("resolved_product_ids", []),
         "context_used": result.context_used,
     }
-    return result.rewritten_query if result.is_follow_up else query, trace_step
+    return (
+        result.rewritten_query if result.is_follow_up else query,
+        trace_step,
+        compare_context,
+    )
+
+
+def _build_compare_context(result) -> CompareContext | None:
+    if not result.is_follow_up:
+        return None
+
+    resolved_product_ids = result.context_used.get("resolved_product_ids") or []
+    referenced_product_ids = result.context_used.get("referenced_product_ids") or []
+    focus_preferences = result.context_used.get("preferences") or []
+
+    if resolved_product_ids:
+        return CompareContext(
+            product_ids=list(resolved_product_ids),
+            source="resolved_product_ids",
+            focus_preferences=list(focus_preferences),
+        )
+
+    if result.reason == "vague_product_reference" and referenced_product_ids:
+        return CompareContext(
+            product_ids=list(referenced_product_ids),
+            source="referenced_product_ids",
+            focus_preferences=list(focus_preferences),
+        )
+
+    return None
 
 
 def _prepend_trace(response: ChatResponse, trace_step: dict) -> ChatResponse:

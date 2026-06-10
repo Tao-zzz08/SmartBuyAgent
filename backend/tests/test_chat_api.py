@@ -420,11 +420,18 @@ def test_chat_api_rewrites_vague_product_follow_up() -> None:
         )
         payload = response.json()
         rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+        comparison_trace = _trace_step(payload, "product_comparison")
+        returned_product_ids = {
+            product["product_id"] for product in payload["product_cards"]
+        }
 
         assert response.status_code == 200
         assert rewrite_trace["status"] == "rewritten"
         assert rewrite_trace["reason"] == "vague_product_reference"
         assert rewrite_trace["referenced_product_ids"] == ["phone_001", "phone_002"]
+        assert comparison_trace["status"] == "compared"
+        assert comparison_trace["source"] == "referenced_product_ids"
+        assert returned_product_ids <= {"phone_001", "phone_002"}
     finally:
         _cleanup(engine, db_path, chroma_dir)
 
@@ -453,11 +460,61 @@ def test_chat_api_rewrites_ordinal_product_follow_up() -> None:
         )
         payload = response.json()
         rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+        comparison_trace = _trace_step(payload, "product_comparison")
+        returned_product_ids = [
+            product["product_id"] for product in payload["product_cards"]
+        ]
 
         assert response.status_code == 200
         assert rewrite_trace["status"] == "rewritten"
         assert rewrite_trace["reason"] == "ordinal_reference"
         assert rewrite_trace["resolved_product_ids"] == ["phone_001", "phone_002"]
+        assert comparison_trace["status"] == "compared"
+        assert comparison_trace["source"] == "resolved_product_ids"
+        assert returned_product_ids == ["phone_001", "phone_002"]
+
+        db = TestingSessionLocal()
+        try:
+            turns = db.scalars(
+                select(ChatTurn)
+                .where(ChatTurn.session_id == session_id)
+                .order_by(ChatTurn.turn_index)
+            ).all()
+            assert turns[-1].user_query == "第一个和第二个有什么区别"
+        finally:
+            db.close()
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_comparison_handles_missing_product_id() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_compare_missing_test.db",
+        "chroma_chat_api_compare_missing_test",
+    )
+    session_id = "session_compare_missing"
+    _seed_memory_turn(
+        TestingSessionLocal,
+        session_id=session_id,
+        product_ids=["phone_001", "phone_missing"],
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat",
+            json={
+                "query": "这几款哪个更适合拍照",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        payload = response.json()
+        comparison_trace = _trace_step(payload, "product_comparison")
+
+        assert response.status_code == 200
+        assert comparison_trace["missing_product_ids"] == ["phone_missing"]
+        assert comparison_trace["returned_product_ids"] == ["phone_001"]
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

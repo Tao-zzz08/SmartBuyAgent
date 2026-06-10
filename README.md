@@ -125,6 +125,11 @@ changes, vague references such as "这几款", and ordinal references such as
 "第一个/第二个" are rewritten into clearer queries and exposed in debug trace.
 This stage does not use LLM rewrite and does not constrain retrieval to the
 previous product IDs yet; that is reserved for Task 7.4.
+Task 7.4 adds in-session product comparison. Follow-up queries like "这几款" and
+"第一个/第二个" are resolved to the previous turn's product IDs, and the comparison
+branch only loads those products from SQLite instead of running broad product
+retrieval. The comparison logic is still lightweight and rule-based; Stage 8 will
+move toward LangGraph orchestration.
 
 ## Retrieval Evaluation
 
@@ -146,6 +151,13 @@ Run retrieval eval:
 ```bash
 cd backend
 python ../scripts/eval_retrieval.py
+```
+
+Run multiturn eval:
+
+```bash
+cd backend
+python ../scripts/eval_multiturn.py
 ```
 
 The current metrics are lightweight rule checks, not final business metrics. Mock
@@ -175,6 +187,7 @@ Response contains:
 - `product_cards`
 - `citations`
 - `trace`
+- `session_id`
 
 ## Knowledge Documents
 
@@ -205,4 +218,5 @@ npm run dev
 
 ## Next Stage
 
-阶段 4 后续任务：完善 Web Debug 展示细节，之后再升级 SSE、真实 embedding 和 LangGraph Agent。
+Stage 8 next: introduce the LangGraph Agent main chain, then upgrade SSE and
+advanced Web Debug / Showcase flows.
