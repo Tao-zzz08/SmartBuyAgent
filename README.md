@@ -131,6 +131,13 @@ branch only loads those products from SQLite instead of running broad product
 retrieval. The comparison logic is still lightweight and rule-based; Stage 8 will
 move toward LangGraph orchestration.
 
+## Agent Skeleton
+
+Stage 8.1 adds `AgentState` and stub agent nodes as preparation for LangGraph.
+The current `/api/chat` path still uses `ChatService` directly. No runtime
+behavior is changed yet, and the skeleton does not call retrieval, LLM, or
+database services.
+
 ## Retrieval Evaluation
 
 Eval cases are stored in `data/eval/retrieval_eval_cases.json`. They cover product
@@ -218,5 +225,5 @@ npm run dev
 
 ## Next Stage
 
-Stage 8 next: introduce the LangGraph Agent main chain, then upgrade SSE and
-advanced Web Debug / Showcase flows.
+Stage 8 next: wire the stub nodes into a LangGraph Agent main chain, then
+upgrade SSE and advanced Web Debug / Showcase flows.
