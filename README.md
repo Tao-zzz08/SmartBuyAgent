@@ -141,6 +141,10 @@ Stage 8.2 implements executable Agent nodes by reusing the existing
 `QueryUnderstandingService`, retrieval services, `ProductComparisonService`,
 `ResponseComposer`, and optional `LLMAnswerComposer`. The runtime `/api/chat`
 path still uses `ChatService` directly; LangGraph is not connected yet.
+Stage 8.3 adds a LangGraph-based `AgentWorkflow` that orchestrates the executable
+agent nodes. The workflow is independently testable, but the runtime `/api/chat`
+path still uses `ChatService` directly. Switching `/api/chat` to AgentWorkflow is
+reserved for Stage 8.4.
 
 ## Retrieval Evaluation
 
@@ -229,5 +233,5 @@ npm run dev
 
 ## Next Stage
 
-Stage 8 next: wire the stub nodes into a LangGraph Agent main chain, then
-upgrade SSE and advanced Web Debug / Showcase flows.
+Stage 8 next: switch `/api/chat` to the AgentWorkflow behind a compatibility
+layer, then upgrade SSE and advanced Web Debug / Showcase flows.

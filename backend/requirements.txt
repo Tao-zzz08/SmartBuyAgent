@@ -7,3 +7,4 @@ pytest
 httpx
 python-dotenv
 chromadb
+langgraph

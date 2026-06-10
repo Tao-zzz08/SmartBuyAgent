@@ -331,6 +331,7 @@ def response_compose_node(
         response = _compose_with_optional_llm(state, context, response)
 
     _apply_response(state, response)
+    append_trace(state, "response_compose", status="composed")
     return state
 
 
@@ -460,6 +461,7 @@ def _compose_simple_response(
     response_composer = context.response_composer or ResponseComposer()
     response = response_composer.compose(state.query_result)
     _apply_response(state, response)
+    append_trace(state, node_name, status="composed")
     return state
 
 
