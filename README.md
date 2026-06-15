@@ -164,6 +164,10 @@ Stage 10.1 adds a Web Showcase landing page for SmartBuyAgent. The frontend now
 includes a product-style entry page with supported shopping scenarios, example
 prompts, core capability cards, and a navigation path into the existing Web
 Debug workspace.
+Stage 10.2 adds a lightweight feedback loop. Users can mark an answer as helpful
+or not helpful, optionally provide a reason/comment, and the backend stores the
+feedback for future evaluation. Feedback is stored for analysis only and does
+not affect retrieval or recommendation logic yet.
 
 ## Retrieval Evaluation
 
@@ -238,6 +242,22 @@ Events:
 The frontend supports both normal POST `/api/chat` and SSE debug POST
 `/api/chat/stream`.
 
+`POST /api/feedback`
+
+Request fields:
+
+- `session_id`: current chat session ID.
+- `rating`: `helpful` or `not_helpful`.
+- `reason`: optional fixed reason value from the frontend.
+- `comment`: optional free-form note, max 1000 characters.
+- `query`: optional original query for the answer being rated.
+- `answer_preview`: optional answer preview, truncated server-side to 500 characters.
+
+Response contains:
+
+- `id`
+- `status`
+
 ## Knowledge Documents
 
 Markdown seed documents are stored under `data/knowledge_docs/`:
@@ -263,8 +283,8 @@ npm run dev
 - Production-grade LangGraph optimization
 - Token-level LLM streaming
 - 完整 Web Debug 高级功能
-- Feedback Loop
+- Feedback-driven ranking or evaluation automation
 
 ## Next Stage
 
-Next Stage: Stage 10.2 Feedback Loop.
+Next Stage: use collected feedback for offline evaluation and ranking analysis.

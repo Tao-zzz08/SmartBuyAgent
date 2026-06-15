@@ -9,6 +9,7 @@ import {
 import { AnswerPanel } from "./AnswerPanel";
 import { CitationList } from "./CitationList";
 import { ExampleQueries, type ExampleQuery } from "./ExampleQueries";
+import { FeedbackPanel } from "./FeedbackPanel";
 import { ProductCardList } from "./ProductCardList";
 import { RawJsonPanel } from "./RawJsonPanel";
 import { TracePanel } from "./TracePanel";
@@ -75,6 +76,7 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
+  const [latestResponseQuery, setLatestResponseQuery] = useState<string | null>(null);
   const [streamTrace, setStreamTrace] = useState<TraceStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,6 +110,7 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
     setSessionId(null);
     setMessages([]);
     setResponse(null);
+    setLatestResponseQuery(null);
     setStreamTrace([]);
     setError(null);
     setLoading(false);
@@ -120,6 +123,7 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
     setRequestMode("normal");
     setError(null);
     setResponse(null);
+    setLatestResponseQuery(null);
     setStreamTrace([]);
 
     try {
@@ -132,6 +136,7 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
 
       setSessionId(nextSessionId);
       setResponse(result);
+      setLatestResponseQuery(trimmedQuery);
       appendConversationTurn(trimmedQuery, result.answer);
     } catch (err) {
       setResponse(null);
@@ -153,6 +158,7 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
     setRequestMode("stream");
     setError(null);
     setResponse(null);
+    setLatestResponseQuery(null);
     setStreamTrace([]);
     appendMessage("user", trimmedQuery);
 
@@ -171,6 +177,7 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
         onResult: (payload) => {
           setSessionId(payload.session_id ?? sessionId);
           setResponse(payload);
+          setLatestResponseQuery(trimmedQuery);
           setStreamTrace(payload.trace ?? []);
           if (payload.answer.trim()) {
             appendMessage("assistant", payload.answer);
@@ -316,6 +323,11 @@ export function DebugWorkbench({ query, onQueryChange }: DebugWorkbenchProps) {
       </section>
 
       <AnswerPanel answer={response?.answer} />
+      <FeedbackPanel
+        sessionId={sessionId}
+        query={latestResponseQuery ?? ""}
+        answer={response?.answer}
+      />
       <ProductCardList productCards={response?.product_cards ?? []} />
       <CitationList citations={response?.citations ?? []} />
       <TraceTimeline trace={traceForDisplay} status={timelineStatus} />

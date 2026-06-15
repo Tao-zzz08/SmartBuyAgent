@@ -24,6 +24,7 @@ EXPECTED_TABLES = {
     "retrieval_logs",
     "recommendation_logs",
     "feedback",
+    "chat_feedback",
 }
 
 

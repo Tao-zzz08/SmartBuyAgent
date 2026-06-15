@@ -1,4 +1,5 @@
 from app.models.chat_memory import ChatSession, ChatTurn
+from app.models.feedback import ChatFeedback
 from app.models.tables import (
     Category,
     CategoryAttributeDef,
@@ -17,6 +18,7 @@ from app.models.tables import (
 
 
 __all__ = [
+    "ChatFeedback",
     "ChatSession",
     "ChatTurn",
     "Category",

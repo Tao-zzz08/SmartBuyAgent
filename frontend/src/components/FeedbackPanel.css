@@ -1,0 +1,83 @@
+.feedback-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.feedback-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.feedback-header h2 {
+  margin-bottom: 4px;
+}
+
+.feedback-header p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.55;
+}
+
+.feedback-saved {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #027a48;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.feedback-rating-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.feedback-choice {
+  border: 1px solid #bdc7d8;
+  background: #ffffff;
+  color: #1849a9;
+}
+
+.feedback-choice.active {
+  border-color: #2457d6;
+  background: #eef4ff;
+  color: #1849a9;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 10px;
+}
+
+.feedback-form select {
+  width: 100%;
+  border: 1px solid #bdc7d8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #182033;
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.feedback-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: #667085;
+  font-size: 13px;
+}
+
+@media (max-width: 680px) {
+  .feedback-header,
+  .feedback-footer {
+    display: grid;
+  }
+}
