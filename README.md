@@ -156,6 +156,10 @@ Stage 9.2 adds frontend SSE consumption for `/api/chat/stream`. The Web Debug
 page can now send streaming debug requests, append trace events as they arrive,
 and render the final result event. The original non-streaming `/api/chat`
 request path remains available.
+Stage 9.3 enhances the Web Debug experience with an Agent Timeline view. Both
+normal `/api/chat` responses and SSE `/api/chat/stream` events can now be
+visualized as readable workflow steps, while the raw JSON debug view remains
+available.
 
 ## Retrieval Evaluation
 
@@ -259,5 +263,4 @@ npm run dev
 
 ## Next Stage
 
-Stage 9 next: refine streaming trace panels and error states, then continue
-toward advanced Web Debug / Showcase flows.
+Next Stage: Stage 10 Web Showcase + Feedback Loop.

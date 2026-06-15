@@ -7,7 +7,7 @@ type TracePanelProps = {
 export function TracePanel({ trace }: TracePanelProps) {
   return (
     <section className="panel">
-      <h2>Trace</h2>
+      <h2>Raw Trace JSON</h2>
       {trace.length > 0 ? (
         <div className="trace-list">
           {trace.map((step, index) => (

@@ -12,6 +12,7 @@ import { ExampleQueries, type ExampleQuery } from "./components/ExampleQueries";
 import { ProductCardList } from "./components/ProductCardList";
 import { RawJsonPanel } from "./components/RawJsonPanel";
 import { TracePanel } from "./components/TracePanel";
+import { TraceTimeline } from "./components/TraceTimeline";
 import "./App.css";
 
 const DEFAULT_QUERY =
@@ -80,6 +81,14 @@ function App() {
   const [requestMode, setRequestMode] = useState<RequestMode>(null);
 
   const traceForDisplay = response?.trace ?? streamTrace;
+  const timelineStatus =
+    loading && requestMode === "stream"
+      ? "streaming"
+      : error && requestMode === "stream"
+        ? "error"
+        : response
+          ? "complete"
+          : "idle";
   const rawJsonData =
     response ??
     (requestMode === "stream" || streamTrace.length > 0
@@ -310,6 +319,7 @@ function App() {
         <AnswerPanel answer={response?.answer} />
         <ProductCardList productCards={response?.product_cards ?? []} />
         <CitationList citations={response?.citations ?? []} />
+        <TraceTimeline trace={traceForDisplay} status={timelineStatus} />
         <TracePanel trace={traceForDisplay} />
         <RawJsonPanel data={rawJsonData} />
       </div>
