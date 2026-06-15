@@ -1,6 +1,11 @@
 import { useState, type FormEvent } from "react";
 
-import { sendChatMessage, type ChatResponse } from "./api/chat";
+import {
+  sendChatMessage,
+  sendChatMessageStream,
+  type ChatResponse,
+  type TraceStep,
+} from "./api/chat";
 import { AnswerPanel } from "./components/AnswerPanel";
 import { CitationList } from "./components/CitationList";
 import { ExampleQueries, type ExampleQuery } from "./components/ExampleQueries";
@@ -9,32 +14,49 @@ import { RawJsonPanel } from "./components/RawJsonPanel";
 import { TracePanel } from "./components/TracePanel";
 import "./App.css";
 
-const DEFAULT_QUERY = "预算3000，推荐一款拍照好的手机";
+const DEFAULT_QUERY =
+  "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a";
+
 const EXAMPLE_QUERIES: ExampleQuery[] = [
   {
-    label: "手机导购",
-    query: "预算3000，推荐一款拍照好的手机",
-    description: "触发商品召回和知识 citation",
+    label: "\u624b\u673a\u5bfc\u8d2d",
+    query:
+      "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a",
+    description: "Product retrieval + knowledge citation",
   },
   {
-    label: "鞋靴导购",
-    query: "500以内，想买一双通勤防滑的鞋",
-    description: "测试鞋靴品类和预算过滤",
+    label: "\u978b\u9774\u5bfc\u8d2d",
+    query:
+      "500\u4ee5\u5185\uff0c\u60f3\u4e70\u4e00\u53cc\u901a\u52e4\u9632\u6ed1\u7684\u978b",
+    description: "Category and budget filter",
   },
   {
-    label: "护肤导购",
-    query: "敏感肌用什么保湿修护面霜，预算300以内",
-    description: "测试护肤品类和偏好解析",
+    label: "\u62a4\u80a4\u5bfc\u8d2d",
+    query:
+      "\u654f\u611f\u808c\u7528\u4ec0\u4e48\u4fdd\u6e7f\u4fee\u62a4\u9762\u971c\uff0c\u9884\u7b97300\u4ee5\u5185",
+    description: "Skincare preferences",
   },
   {
-    label: "知识问答",
-    query: "为什么手机拍照不能只看像素",
-    description: "只触发知识文档 citation 召回",
+    label: "\u77e5\u8bc6\u95ee\u7b54",
+    query:
+      "\u4e3a\u4ec0\u4e48\u624b\u673a\u62cd\u7167\u4e0d\u80fd\u53ea\u770b\u50cf\u7d20",
+    description: "Knowledge-only path",
   },
   {
-    label: "澄清追问",
-    query: "推荐一下",
-    description: "测试缺少品类时的澄清链路",
+    label: "\u6f84\u6e05\u8ffd\u95ee",
+    query: "\u63a8\u8350\u4e00\u4e0b",
+    description: "Clarification path",
+  },
+  {
+    label: "\u9884\u7b97\u8ffd\u95ee",
+    query: "\u9884\u7b97\u63d0\u9ad8\u52304000\u5462",
+    description: "Follow-up rewrite",
+  },
+  {
+    label: "\u5019\u9009\u6bd4\u8f83",
+    query:
+      "\u7b2c\u4e00\u4e2a\u548c\u7b2c\u4e8c\u4e2a\u6709\u4ec0\u4e48\u533a\u522b",
+    description: "In-session comparison",
   },
 ];
 
@@ -44,14 +66,29 @@ type ChatMessage = {
   content: string;
 };
 
+type RequestMode = "normal" | "stream" | null;
+
 function App() {
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [debug, setDebug] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [response, setResponse] = useState<ChatResponse | null>(null);
+  const [streamTrace, setStreamTrace] = useState<TraceStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [requestMode, setRequestMode] = useState<RequestMode>(null);
+
+  const traceForDisplay = response?.trace ?? streamTrace;
+  const rawJsonData =
+    response ??
+    (requestMode === "stream" || streamTrace.length > 0
+      ? {
+          session_id: sessionId,
+          trace: streamTrace,
+          streaming: loading && requestMode === "stream",
+        }
+      : null);
 
   const handleExampleSelect = (exampleQuery: string) => {
     setQuery(exampleQuery);
@@ -62,47 +99,105 @@ function App() {
     setSessionId(null);
     setMessages([]);
     setResponse(null);
+    setStreamTrace([]);
     setError(null);
     setLoading(false);
+    setRequestMode(null);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
+    setRequestMode("normal");
     setError(null);
+    setResponse(null);
+    setStreamTrace([]);
 
     try {
+      const trimmedQuery = query.trim();
       const request = sessionId
-        ? { query, debug, session_id: sessionId }
-        : { query, debug };
+        ? { query: trimmedQuery, debug, session_id: sessionId }
+        : { query: trimmedQuery, debug };
       const result = await sendChatMessage(request);
       const nextSessionId = result.session_id ?? sessionId;
 
       setSessionId(nextSessionId);
       setResponse(result);
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: currentMessages.length + 1,
-          role: "user",
-          content: query.trim(),
-        },
-        {
-          id: currentMessages.length + 2,
-          role: "assistant",
-          content: result.answer,
-        },
-      ]);
+      appendConversationTurn(trimmedQuery, result.answer);
     } catch (err) {
       setResponse(null);
-      setError(
-        err instanceof Error
-          ? `请求失败：${err.message}`
-          : "请求失败：未知错误",
-      );
+      setError(formatRequestError(err, "Request failed"));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleStreamSubmit = async () => {
+    const trimmedQuery = query.trim();
+
+    if (!trimmedQuery) {
+      setError("\u8bf7\u8f93\u5165\u95ee\u9898");
+      return;
+    }
+
+    setLoading(true);
+    setRequestMode("stream");
+    setError(null);
+    setResponse(null);
+    setStreamTrace([]);
+    appendMessage("user", trimmedQuery);
+
+    try {
+      const request = sessionId
+        ? { query: trimmedQuery, debug, session_id: sessionId }
+        : { query: trimmedQuery, debug };
+
+      await sendChatMessageStream(request, {
+        onSession: (payload) => {
+          setSessionId(payload.session_id);
+        },
+        onTrace: (payload) => {
+          setStreamTrace((currentTrace) => [...currentTrace, payload]);
+        },
+        onResult: (payload) => {
+          setSessionId(payload.session_id ?? sessionId);
+          setResponse(payload);
+          setStreamTrace(payload.trace ?? []);
+          if (payload.answer.trim()) {
+            appendMessage("assistant", payload.answer);
+          }
+        },
+        onDone: (payload) => {
+          if (payload.status === "error") {
+            setError((currentError) => currentError ?? "Stream ended with error");
+          }
+          setLoading(false);
+        },
+        onError: (payload) => {
+          setError(`Stream request failed: ${payload.message}`);
+          setLoading(false);
+        },
+      });
+    } catch (err) {
+      setError(formatRequestError(err, "Stream request failed"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const appendConversationTurn = (userQuery: string, assistantAnswer: string) => {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      createMessage("user", userQuery, currentMessages.length),
+      createMessage("assistant", assistantAnswer, currentMessages.length + 1),
+    ]);
+  };
+
+  const appendMessage = (role: ChatMessage["role"], content: string) => {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      createMessage(role, content, currentMessages.length),
+    ]);
   };
 
   return (
@@ -112,9 +207,9 @@ function App() {
           <div>
             <h1>SmartBuyAgent Web Debug</h1>
             <p className="session-line">
-              当前 session_id：
+              Current session_id:
               <span className={sessionId ? "session-id" : "session-empty"}>
-                {sessionId ?? "未创建"}
+                {sessionId ?? "not created"}
               </span>
             </p>
           </div>
@@ -124,7 +219,7 @@ function App() {
             onClick={handleNewSession}
             disabled={loading}
           >
-            新会话
+            New Session
           </button>
         </header>
 
@@ -153,19 +248,39 @@ function App() {
                 />
                 Debug
               </label>
-              <button type="submit" disabled={loading}>
-                {loading ? "发送中..." : "发送请求"}
-              </button>
+              <div className="button-row">
+                <button type="submit" disabled={loading}>
+                  {loading && requestMode === "normal"
+                    ? "Sending..."
+                    : "Send request"}
+                </button>
+                <button
+                  className="stream-button"
+                  type="button"
+                  onClick={handleStreamSubmit}
+                  disabled={loading}
+                >
+                  {loading && requestMode === "stream"
+                    ? "Streaming..."
+                    : "Stream send"}
+                </button>
+              </div>
             </div>
           </form>
 
           {loading ? (
-            <p className="request-status">正在请求后端 /api/chat...</p>
+            <p className="request-status">
+              {requestMode === "stream"
+                ? `Streaming from /api/chat/stream... received ${streamTrace.length} trace step(s).`
+                : "Requesting backend /api/chat..."}
+            </p>
           ) : null}
           {!loading && response ? (
             <p className="request-status">
-              请求完成：返回 {response.product_cards.length} 个商品卡片，
-              {response.citations.length} 条 citation，{response.trace.length} 个 trace step
+              {requestMode === "stream" ? "Stream complete" : "Request complete"}:
+              returned {response.product_cards.length} product card(s),{" "}
+              {response.citations.length} citation(s), {response.trace.length} trace
+              step(s).
             </p>
           ) : null}
           {error ? <p className="error-message">{error}</p> : null}
@@ -188,18 +303,36 @@ function App() {
               ))}
             </div>
           ) : (
-            <p className="muted">暂无对话消息</p>
+            <p className="muted">No conversation messages yet</p>
           )}
         </section>
 
         <AnswerPanel answer={response?.answer} />
         <ProductCardList productCards={response?.product_cards ?? []} />
         <CitationList citations={response?.citations ?? []} />
-        <TracePanel trace={response?.trace ?? []} />
-        <RawJsonPanel data={response} />
+        <TracePanel trace={traceForDisplay} />
+        <RawJsonPanel data={rawJsonData} />
       </div>
     </main>
   );
+}
+
+function createMessage(
+  role: ChatMessage["role"],
+  content: string,
+  offset: number,
+): ChatMessage {
+  return {
+    id: Date.now() + offset,
+    role,
+    content,
+  };
+}
+
+function formatRequestError(err: unknown, prefix: string): string {
+  return err instanceof Error
+    ? `${prefix}: ${err.message}`
+    : `${prefix}: unknown error`;
 }
 
 export default App;

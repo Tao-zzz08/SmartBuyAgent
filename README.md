@@ -152,6 +152,10 @@ Stage 9.1 adds a backend SSE endpoint `/api/chat/stream`. It streams `session`,
 `trace`, `result`, `done`, and `error` events using `text/event-stream`. The
 current implementation runs AgentWorkflow first and then emits trace events in
 order; frontend SSE integration is reserved for Stage 9.2.
+Stage 9.2 adds frontend SSE consumption for `/api/chat/stream`. The Web Debug
+page can now send streaming debug requests, append trace events as they arrive,
+and render the final result event. The original non-streaming `/api/chat`
+request path remains available.
 
 ## Retrieval Evaluation
 
@@ -223,6 +227,9 @@ Events:
 - `done`: marks stream completion
 - `error`: reports stream-level failures
 
+The frontend supports both normal POST `/api/chat` and SSE debug POST
+`/api/chat/stream`.
+
 ## Knowledge Documents
 
 Markdown seed documents are stored under `data/knowledge_docs/`:
@@ -246,11 +253,11 @@ npm run dev
 - 真实 embedding
 - 生产级 LLM 回答质量优化
 - LangGraph Agent
-- Frontend SSE integration
+- Token-level LLM streaming
 - 完整 Web Debug 高级功能
 - Web Showcase
 
 ## Next Stage
 
-Stage 9 next: connect the frontend Web Debug page to `/api/chat/stream`, then
-continue toward streaming trace panels and advanced Web Debug / Showcase flows.
+Stage 9 next: refine streaming trace panels and error states, then continue
+toward advanced Web Debug / Showcase flows.
