@@ -160,6 +160,10 @@ Stage 9.3 enhances the Web Debug experience with an Agent Timeline view. Both
 normal `/api/chat` responses and SSE `/api/chat/stream` events can now be
 visualized as readable workflow steps, while the raw JSON debug view remains
 available.
+Stage 10.1 adds a Web Showcase landing page for SmartBuyAgent. The frontend now
+includes a product-style entry page with supported shopping scenarios, example
+prompts, core capability cards, and a navigation path into the existing Web
+Debug workspace.
 
 ## Retrieval Evaluation
 
@@ -256,11 +260,11 @@ npm run dev
 - 300 条 demo 商品数据
 - 真实 embedding
 - 生产级 LLM 回答质量优化
-- LangGraph Agent
+- Production-grade LangGraph optimization
 - Token-level LLM streaming
 - 完整 Web Debug 高级功能
-- Web Showcase
+- Feedback Loop
 
 ## Next Stage
 
-Next Stage: Stage 10 Web Showcase + Feedback Loop.
+Next Stage: Stage 10.2 Feedback Loop.

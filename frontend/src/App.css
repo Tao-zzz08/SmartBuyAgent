@@ -20,6 +20,54 @@ a {
   padding: 32px 20px;
 }
 
+.app-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 20px;
+}
+
+.brand-button,
+.nav-link {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #182033;
+}
+
+.brand-button {
+  padding-left: 0;
+  font-size: 18px;
+}
+
+.brand-button:hover {
+  color: #1849a9;
+}
+
+.nav-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  border-color: #d7deea;
+  background: #ffffff;
+  color: #475467;
+}
+
+.nav-link.active {
+  border-color: #2457d6;
+  background: #eef4ff;
+  color: #1849a9;
+}
+
+[hidden] {
+  display: none !important;
+}
+
 .debug-layout {
   width: 100%;
   max-width: 1200px;
