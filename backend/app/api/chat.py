@@ -74,8 +74,6 @@ def chat(
     )
 
 
-<<<<<<< Updated upstream
-=======
 @router.post("/chat/stream")
 def chat_stream(
     request: ChatRequest,
@@ -124,7 +122,6 @@ def chat_stream(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
->>>>>>> Stashed changes
 def _save_conversation_turn(
     db: Session,
     session_id: str,
