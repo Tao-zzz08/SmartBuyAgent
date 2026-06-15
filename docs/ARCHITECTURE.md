@@ -1,0 +1,131 @@
+# Architecture
+
+## 1. System Overview
+
+SmartBuyAgent is a RAG + Agent shopping-guide prototype for new retail product scenarios. It supports phones, shoes, and skincare as MVP categories.
+
+The system has four main layers:
+
+- Data layer: SQLite tables, Markdown knowledge documents, and Chroma indexes.
+- Service layer: query understanding, retrieval, response composition, LLM answer composition, memory, and feedback.
+- Agent layer: LangGraph AgentWorkflow and executable agent nodes.
+- Frontend layer: Web Showcase, Web Debug, Agent Timeline, SSE streaming, and feedback UI.
+
+## 2. Backend Layers
+
+FastAPI exposes:
+
+- `GET /health`
+- `POST /api/chat`
+- `POST /api/chat/stream`
+- `POST /api/feedback`
+
+Core backend modules:
+
+- `app/core`: configuration, database, logging.
+- `app/models`: SQLAlchemy tables for products, documents, sessions, turns, and feedback.
+- `app/services`: embedding and LLM provider abstractions.
+- `app/retrieval`: Chroma indexing and product/knowledge retrieval.
+- `app/chat`: query understanding, response composition, memory, follow-up rewrite, product comparison, and ChatService facade.
+- `app/agent`: AgentState, runtime context, nodes, and LangGraph workflow.
+
+`ChatService` is the stable API-facing facade. Runtime chat execution is routed through `AgentWorkflow`.
+
+## 3. Frontend Layers
+
+The frontend is built with React, TypeScript, and Vite.
+
+Main frontend surfaces:
+
+- Showcase page: product-style landing page and demo entry point.
+- Debug workbench: normal request mode, SSE stream mode, conversation panel, cards, citations, trace, and raw JSON.
+- Agent Timeline: readable view of workflow trace steps.
+- Feedback Panel: helpful / not helpful answer feedback.
+
+The frontend does not fabricate product cards or citations. It renders the backend response.
+
+## 4. Data Model
+
+Product and category data:
+
+- `categories`
+- `category_attribute_defs`
+- `category_profiles`
+- `products`
+- `product_attributes`
+- `product_tags`
+
+Knowledge data:
+
+- `documents`
+- `document_chunks`
+
+Conversation and feedback:
+
+- `chat_sessions`
+- `chat_turns`
+- `chat_feedback`
+
+`chat_turns` stores compact summaries: original user query, answer, intent, category, budget, preferences, product IDs, and citation chunk IDs. It does not store vectors or full product/citation payloads.
+
+## 5. AgentWorkflow
+
+The AgentWorkflow orchestrates:
+
+1. Load recent conversation context.
+2. Rewrite follow-up queries when a session context exists.
+3. Understand intent, category, budget, and preferences.
+4. Route to shopping guide, product knowledge, comparison, clarification, or chitchat.
+5. Retrieve products and knowledge citations when needed.
+6. Compare only the referenced in-session candidate products when comparison context exists.
+7. Compose the response.
+
+Product cards are produced by product retrieval or product comparison. Citations are produced by knowledge retrieval. The LLM only controls the `answer` wording and is guarded by output validation.
+
+## 6. RAG Pipeline
+
+Seed data is imported into SQLite:
+
+- Categories and category profiles
+- Mini product CSV data
+- Markdown knowledge documents
+
+Document import splits Markdown files into `document_chunks`. Index rebuild writes product text and knowledge chunks into Chroma collections:
+
+- `product_text`
+- `knowledge_docs`
+
+During chat, product retrieval combines structured filters and vector recall, while knowledge retrieval searches Chroma and returns citation views.
+
+## 7. Conversation Memory
+
+The API layer owns memory persistence:
+
+- If a request has no `session_id`, `/api/chat` and `/api/chat/stream` generate one.
+- If a request provides `session_id`, it is reused.
+- The original `user_query` is saved.
+- The rewritten query is only exposed in trace and is not saved as the user query.
+
+Memory currently supports follow-up rewrite and in-session comparison. It is not a long-term personalization engine.
+
+## 8. Feedback Loop
+
+`POST /api/feedback` stores answer feedback:
+
+- session ID
+- optional turn ID
+- rating
+- reason
+- optional comment
+- original query
+- answer preview
+
+Feedback does not affect current retrieval, ranking, or recommendation behavior. It is collected for later evaluation and quality analysis.
+
+## 9. Safety and Boundaries
+
+SmartBuyAgent does not provide login, shopping cart, orders, payment, fulfillment, or after-sales tickets.
+
+LLM output is constrained by guardrails. Unsafe purchase actions, unsupported discount claims, skincare medical claims, JSON/table output, unknown product IDs, and unknown URLs are rejected and fall back to template answers.
+
+Skincare content is limited to daily care and ingredient guidance. It does not provide diagnosis, treatment, cure, or drug-effect claims.
