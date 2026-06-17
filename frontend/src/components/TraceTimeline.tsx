@@ -31,6 +31,8 @@ const STEP_TITLES: Record<string, string> = {
   node_progress: "节点进度",
   node_end: "节点完成",
   retrieval: "检索过程",
+  stream_guard: "流式安全守卫",
+  error: "错误事件",
   save_trace: "Trace \u8bb0\u5f55",
   clarification: "\u6f84\u6e05\u56de\u7b54",
   chitchat: "\u95f2\u804a\u56de\u7b54",
@@ -188,6 +190,25 @@ function buildSummaryRows(stepName: string, step: TraceStep): SummaryRow[] {
     ]);
   }
 
+  if (stepName === "stream_guard") {
+    return compactRows([
+      row("Node", step.node, true),
+      row("Status", step.status),
+      row("Reason", step.reason, true),
+      row("Matched phrase", step.matched_phrase),
+      row("Severity", step.severity),
+    ]);
+  }
+
+  if (stepName === "error") {
+    return compactRows([
+      row("Failed node", step.failed_node, true),
+      row("Error type", step.error_type),
+      row("Message", step.message, true),
+      row("Duration", formatDuration(step.duration_ms)),
+    ]);
+  }
+
   if (stepName === "query_understanding") {
     return compactRows([
       row("Intent", step.intent),
@@ -342,7 +363,12 @@ function statusKind(status: string): string {
   if (status === "rewritten") {
     return "rewritten";
   }
-  if (status === "fallback" || status === "insufficient_products") {
+  if (
+    status === "fallback" ||
+    status === "insufficient_products" ||
+    status === "blocked" ||
+    status === "guarded"
+  ) {
     return "warning";
   }
   if (status === "running") {
@@ -375,6 +401,12 @@ function formatStepStatus(status: string): string {
   }
   if (status === "fallback") {
     return "\u964d\u7ea7";
+  }
+  if (status === "blocked") {
+    return "已拦截";
+  }
+  if (status === "guarded") {
+    return "安全拦截";
   }
   if (status === "disabled") {
     return "\u5173\u95ed";

@@ -30,6 +30,10 @@ from app.retrieval.retrieval_service import (
 )
 from app.streaming.events import StreamEvent
 from app.streaming.event_emitter import StreamEventEmitter
+from app.streaming.safety import (
+    STREAM_GUARDED_FALLBACK_ANSWER,
+    StreamSafetyViolation,
+)
 
 
 NodeFunc = Callable[[AgentState, AgentRuntimeContext], AgentState]
@@ -275,6 +279,57 @@ class AgentStreamRunner:
             )
             _apply_response(state, response)
             append_trace(state, "response_compose", status="composed")
+        except StreamSafetyViolation as exc:
+            duration_ms = _duration_ms(start_time)
+            setattr(state, "_stream_done_status", "guarded")
+            guarded_response = _guarded_response(state, self.context, exc)
+            _apply_response(state, guarded_response)
+            guard_trace = {
+                "step": "stream_guard",
+                "node": "response_compose",
+                "status": "blocked",
+                "reason": exc.reason,
+                "matched_phrase": exc.matched_phrase,
+                "severity": exc.severity,
+            }
+            state.trace.append(guard_trace)
+            append_trace(state, "response_compose", status="failed")
+            emitter.emit(
+                "stream_guard",
+                {
+                    "node": "response_compose",
+                    "status": "blocked",
+                    "reason": exc.reason,
+                    "matched_phrase": exc.matched_phrase,
+                    "severity": exc.severity,
+                },
+            )
+            emitter.emit("trace", guard_trace)
+            emitter.emit(
+                "error",
+                {
+                    "failed_node": "response_compose",
+                    "error_type": "StreamSafetyViolation",
+                    "message": "Streaming output blocked by safety guard",
+                    "duration_ms": duration_ms,
+                },
+            )
+            emitter.emit(
+                "node_end",
+                {
+                    "node": "response_compose",
+                    "label": NODE_LABELS["response_compose"],
+                    "status": "failed",
+                    "duration_ms": duration_ms,
+                    "summary": {
+                        "guarded": True,
+                        "reason": exc.reason,
+                        "matched_phrase": exc.matched_phrase,
+                    },
+                },
+            )
+            yield from emitter.drain()
+            return
         except Exception as exc:
             duration_ms = _duration_ms(start_time)
             emitter.emit(
@@ -448,6 +503,8 @@ class AgentStreamRunner:
 
         thread.join()
         error = result.get("error")
+        if isinstance(error, StreamSafetyViolation):
+            raise error
         if isinstance(error, Exception):
             return SAFE_LLM_FALLBACK_ANSWER, emitted_tokens
         answer = result.get("answer")
@@ -755,6 +812,50 @@ def _append_response_trace(
         product_cards=response.product_cards,
         citations=response.citations,
         trace=[*response.trace, trace_step],
+    )
+
+
+def _guarded_response(
+    state: AgentState,
+    context: AgentRuntimeContext,
+    exc: StreamSafetyViolation,
+) -> ChatResponse:
+    if state.query_result is None:
+        return ChatResponse(
+            answer=STREAM_GUARDED_FALLBACK_ANSWER,
+            product_cards=[],
+            citations=[],
+            trace=[
+                {
+                    "step": "llm_answer",
+                    "enabled": True,
+                    "status": "guarded",
+                    "reason": exc.reason,
+                }
+            ],
+        )
+
+    response_composer = context.response_composer or ResponseComposer()
+    base_response = response_composer.compose(
+        state.query_result,
+        product_candidates=state.product_candidates,
+        citations=state.citations,
+    )
+    return ChatResponse(
+        answer=STREAM_GUARDED_FALLBACK_ANSWER,
+        product_cards=base_response.product_cards,
+        citations=base_response.citations,
+        trace=[
+            *base_response.trace,
+            {
+                "step": "llm_answer",
+                "enabled": True,
+                "status": "guarded",
+                "reason": exc.reason,
+                "matched_phrase": exc.matched_phrase,
+                "severity": exc.severity,
+            },
+        ],
     )
 
 

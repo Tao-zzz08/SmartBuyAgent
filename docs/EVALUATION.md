@@ -39,6 +39,8 @@ Current backend tests cover:
 - Retrieval stream events for product and knowledge recall
 - Provider-native LLM token streaming with chunked fallback behavior
 - Error-node exposure in `/api/chat/stream`
+- StreamSafetyGuard phrase matching with rolling-buffer cross-token detection
+- Guarded `/api/chat/stream` behavior: `stream_guard`, response node failure, safe fallback result, and no unsafe token exposure
 
 ## 2. Frontend Build
 
@@ -115,5 +117,6 @@ Recommended manual checks:
 - MySQL 5.7 compatibility is maintained through SQLAlchemy model choices and documented configuration rather than live MySQL integration tests.
 - The project is not connected to live ecommerce inventory.
 - SSE streams realtime workflow node events, separate retrieval nodes, retrieval summaries, provider-native token chunks, trace, final result, and done/error events.
+- Streaming token output is protected by a lightweight safety guard; guarded streams return a safe fallback final result.
 - Feedback is stored but does not yet train ranking or retrieval.
 - The system does not perform checkout, payment, orders, or fulfillment.

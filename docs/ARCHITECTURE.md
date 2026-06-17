@@ -183,6 +183,18 @@ Feedback does not affect current retrieval, ranking, or recommendation behavior.
 
 Product cards remain sourced from ProductRetrievalService or ProductComparisonService. Citations remain sourced from KnowledgeRetrievalService. LLM output only affects the answer text and does not decide candidates or citations.
 
+## 8.2 Streaming Safety Guard
+
+`LLMAnswerComposer.stream_compose()` uses a lightweight `StreamSafetyGuard` before token chunks are emitted to the frontend.
+
+- A rolling buffer keeps the latest 120 characters so phrases split across token boundaries can still be detected.
+- The streamer holds back the latest 80 characters and releases only older safe text, reducing the chance that the first half of a risky phrase is already visible.
+- The guard blocks phrase-level purchase actions, fabricated purchase/payment links, fabricated ecommerce-source claims, and skincare medical claims.
+- Normal advice such as "worth buying" or "compare before buying" is allowed because the guard does not block the standalone word "purchase/buy".
+- When a violation is detected, `/api/chat/stream` emits `stream_guard`, `error`, and `node_end(status=failed)`, then returns a final `result` with a safe fallback answer and `done(status=guarded)`.
+
+The guard is not a full factuality verifier. It is a fast stream-time boundary for the highest-risk output classes. The final non-streaming LLM answer validation still runs before an answer is accepted.
+
 ## 9. Safety and Boundaries
 
 SmartBuyAgent does not provide login, shopping cart, orders, payment, fulfillment, or after-sales tickets.

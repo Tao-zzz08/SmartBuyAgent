@@ -40,7 +40,7 @@ export type ChatResponse = {
 };
 
 export type ChatStreamDonePayload = {
-  status: "ok" | "error";
+  status: "ok" | "error" | "guarded";
 };
 
 export type ChatStreamErrorPayload = {
@@ -70,12 +70,23 @@ export type ChatStreamTokenPayload = {
   delta: string;
 };
 
+export type ChatStreamGuardPayload = Record<string, unknown> & {
+  request_id?: string;
+  session_id?: string;
+  node?: string;
+  status?: string;
+  reason?: string;
+  matched_phrase?: string;
+  severity?: string;
+};
+
 export type ChatStreamHandlers = {
   onSession?: (payload: { session_id: string }) => void;
   onNodeStart?: (payload: ChatStreamNodePayload) => void;
   onNodeProgress?: (payload: ChatStreamNodePayload) => void;
   onRetrieval?: (payload: ChatStreamRetrievalPayload) => void;
   onToken?: (payload: ChatStreamTokenPayload) => void;
+  onStreamGuard?: (payload: ChatStreamGuardPayload) => void;
   onNodeEnd?: (payload: ChatStreamNodePayload) => void;
   onTrace?: (payload: TraceStep) => void;
   onResult?: (payload: ChatResponse) => void;
@@ -224,6 +235,11 @@ function dispatchSseBlock(block: string, handlers: ChatStreamHandlers): void {
 
   if (event === "token") {
     handlers.onToken?.(payload as ChatStreamTokenPayload);
+    return;
+  }
+
+  if (event === "stream_guard") {
+    handlers.onStreamGuard?.(payload as ChatStreamGuardPayload);
     return;
   }
 

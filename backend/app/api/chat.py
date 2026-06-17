@@ -184,7 +184,7 @@ def chat_stream(
             done_event = {
                 "request_id": request_id,
                 "session_id": session_id,
-                "status": "ok",
+                "status": getattr(state, "_stream_done_status", "ok"),
             }
             yield emit(StreamEvent(event="result", data=result_event))
             yield emit(StreamEvent(event="done", data=done_event))

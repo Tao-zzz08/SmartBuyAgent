@@ -7,6 +7,11 @@ import re
 from app.chat.query_understanding import QueryUnderstandingResult
 from app.retrieval.retrieval_service import Citation, ProductCandidate
 from app.services.llm import BaseLLMService, LLMMessage
+from app.streaming.safety import (
+    STREAM_SAFE_RELEASE_HOLD_CHARS,
+    StreamSafetyGuard,
+    StreamSafetyViolation,
+)
 
 
 MAX_PRODUCTS = 3
@@ -124,13 +129,33 @@ class LLMAnswerComposer:
         )
 
         parts: list[str] = []
+        pending_safe_text = ""
+        guard = StreamSafetyGuard()
+        category_context = query_result.category_id or query_result.category_path
         try:
             for delta in self.llm_service.stream_chat(messages):
                 if not delta:
                     continue
+                decision = guard.check_delta(
+                    delta,
+                    category=category_context,
+                    intent=query_result.intent,
+                )
+                if not decision.safe:
+                    raise StreamSafetyViolation(
+                        reason=decision.reason or "unsafe_stream_delta",
+                        matched_phrase=decision.matched_phrase,
+                        severity=decision.severity,
+                    )
                 parts.append(delta)
-                if on_token is not None:
-                    on_token(delta)
+                pending_safe_text += delta
+                if len(pending_safe_text) > STREAM_SAFE_RELEASE_HOLD_CHARS:
+                    releasable = pending_safe_text[:-STREAM_SAFE_RELEASE_HOLD_CHARS]
+                    pending_safe_text = pending_safe_text[-STREAM_SAFE_RELEASE_HOLD_CHARS:]
+                    if releasable and on_token is not None:
+                        on_token(releasable)
+        except StreamSafetyViolation:
+            raise
         except Exception:
             fallback_answer = self.compose(
                 query=query,
@@ -147,6 +172,18 @@ class LLMAnswerComposer:
         if not content:
             return _safe_fallback_answer()
 
+        stream_validation = guard.check_buffer(
+            content,
+            category=category_context,
+            intent=query_result.intent,
+        )
+        if not stream_validation.safe:
+            raise StreamSafetyViolation(
+                reason=stream_validation.reason or "unsafe_stream_answer",
+                matched_phrase=stream_validation.matched_phrase,
+                severity=stream_validation.severity,
+            )
+
         validation = validate_llm_answer(
             content,
             product_candidates=products,
@@ -154,6 +191,9 @@ class LLMAnswerComposer:
         )
         if not validation.is_valid:
             return _safe_fallback_answer()
+
+        if pending_safe_text and on_token is not None:
+            on_token(pending_safe_text)
 
         return content
 

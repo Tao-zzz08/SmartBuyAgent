@@ -119,6 +119,9 @@ data: {"type":"product","returned_products":3,"cache_status":"miss"}
 event: token
 data: {"node":"response_compose","delta":"根据你的预算，"}
 
+event: stream_guard
+data: {"node":"response_compose","status":"blocked","reason":"purchase_action"}
+
 event: node_end
 data: {"node":"product_retrieval","status":"success","duration_ms":83}
 
@@ -149,6 +152,8 @@ Notes:
 - Product and knowledge retrieval are exposed as separate stream nodes, so the frontend can show their independent start/end timing.
 - Retrieval events summarize product recall, knowledge retrieval, or in-session comparison without sending long source text.
 - Token events prefer provider-native LLM streaming through `stream_chat`; providers without native streaming fall back to chunked non-streaming output. Product cards and citations still come only from retrieval/comparison services.
+- `stream_guard` is emitted when streaming answer text matches high-risk phrases such as purchase actions, fabricated purchase links, skincare treatment/drug-effect claims, or fabricated source language.
+- If a stream is guarded, token output is interrupted and the final `result.answer` is replaced with a safe fallback. The final `result` event remains authoritative; frontend clients should overwrite any partial token text with `result.answer`.
 - Memory saving is handled by the API layer and stores the original query.
 - The endpoint can return `429 Too Many Requests` before an SSE stream starts.
 

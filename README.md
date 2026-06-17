@@ -39,7 +39,7 @@ SmartBuyAgent 是智能导购、推荐解释和商品知识问答系统，不是
 - 规则版追问改写：支持预算变化、模糊指代和序号引用。
 - 候选商品内比较：只比较上一轮候选商品，不全库乱比。
 - LangGraph AgentWorkflow：编排上下文读取、追问改写、意图路由、商品召回、知识检索、候选比较和回答生成。
-- SSE 调试流：输出 `session`、`node_start`、`retrieval`、`token`、`node_end`、`trace`、`result`、`done`、`error` 事件。
+- SSE 调试流：输出 `session`、`node_start`、`retrieval`、`token`、`stream_guard`、`node_end`、`trace`、`result`、`done`、`error` 事件。
 - 前端 Chat Workspace：左侧内存会话栏、中间聊天流、底部输入框、每条回答独立展开 Debug。
 - Feedback Loop：支持 `helpful` / `not_helpful` 反馈收集。
 
@@ -187,12 +187,13 @@ SSE 调试接口，响应类型为 `text/event-stream`。
 - `node_start` / `node_end`：节点开始与结束，包含 `duration_ms`
 - `retrieval`：商品召回、知识检索或候选比较过程摘要
 - `token`：回答文本增量 chunk
+- `stream_guard`：流式回答安全拦截事件
 - `trace`：AgentWorkflow trace step
 - `result`：最终聊天结果
 - `done`：流结束
 - `error`：流级别错误
 
-当前 `/api/chat/stream` 已支持节点级实时 SSE、独立的商品/知识检索节点事件、节点耗时和 LLM provider 原生 token chunk。若 provider 不支持原生流式输出，会降级为非流式回答切块。最终 `result` 仍然是 `answer`、`product_cards`、`citations`、`trace` 和 `session_id` 的权威结果。
+当前 `/api/chat/stream` 已支持节点级实时 SSE、独立的商品/知识检索节点事件、节点耗时和 LLM provider 原生 token chunk。流式 token 会先经过安全守卫；如果命中购买越界、虚假购买链接、护肤治疗/药效承诺或伪造来源表达，接口会发送 `stream_guard` 并用安全 fallback answer 覆盖最终结果。若 provider 不支持原生流式输出，会降级为非流式回答切块。最终 `result` 仍然是 `answer`、`product_cards`、`citations`、`trace` 和 `session_id` 的权威结果。
 
 ### `POST /api/feedback`
 
@@ -376,7 +377,7 @@ The runtime `/api/chat` path is routed through a LangGraph-based `AgentWorkflow`
 - Rule-based follow-up rewrite for budget changes, vague references, and ordinal references.
 - In-session product comparison restricted to previous candidate product IDs.
 - LangGraph AgentWorkflow orchestration for context loading, rewrite, routing, retrieval, comparison, and response composition.
-- SSE debug stream for session, node_start, retrieval, token, node_end, trace, result, done, and error events.
+- SSE debug stream for session, node_start, retrieval, token, stream_guard, node_end, trace, result, done, and error events.
 - Frontend Chat Workspace with an in-memory session sidebar, chat message stream, bottom input bar, and per-answer expandable Debug panels.
 - Feedback loop with `helpful` / `not_helpful` ratings for future evaluation.
 
@@ -526,12 +527,13 @@ Events:
 - `node_start` / `node_end`: realtime node start/end events with `duration_ms`
 - `retrieval`: product retrieval, knowledge retrieval, or comparison progress summary
 - `token`: incremental answer text chunks
+- `stream_guard`: streaming-answer safety interception
 - `trace`: AgentWorkflow trace step
 - `result`: final chat response
 - `done`: stream completion
 - `error`: stream-level failure
 
-`/api/chat/stream` now emits realtime node-level SSE events, separate product/knowledge retrieval node events, node timing, and provider-native LLM token chunks. If the provider does not support native streaming, it falls back to chunked non-streaming output. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
+`/api/chat/stream` now emits realtime node-level SSE events, separate product/knowledge retrieval node events, node timing, and provider-native LLM token chunks. Streaming tokens pass through a safety guard; if the stream contains purchase overreach, fabricated purchase links, skincare treatment/drug-effect claims, or fabricated source language, the endpoint emits `stream_guard` and overwrites the final answer with a safe fallback. If the provider does not support native streaming, it falls back to chunked non-streaming output. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
 
 ### `POST /api/feedback`
 

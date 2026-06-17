@@ -4,6 +4,8 @@ import {
   sendChatMessage,
   sendChatMessageStream,
   type ChatResponse,
+  type ChatStreamErrorPayload,
+  type ChatStreamGuardPayload,
   type ChatStreamNodePayload,
   type ChatStreamRetrievalPayload,
   type TraceStep,
@@ -186,6 +188,15 @@ export function ChatWorkspace() {
               content: `${message.content}${payload.delta}`,
             }));
           },
+          onStreamGuard: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                streamGuardTrace(payload),
+              ),
+            }));
+          },
           onNodeEnd: (payload) => {
             updateMessage(targetSessionId, assistantMessageId, (message) => ({
               ...message,
@@ -218,8 +229,25 @@ export function ChatWorkspace() {
               }));
               setWorkspaceError(message);
             }
+            if (payload.status === "guarded") {
+              updateMessage(targetSessionId, assistantMessageId, (current) => ({
+                ...current,
+                status: current.response ? "done" : current.status,
+              }));
+            }
           },
           onError: (payload) => {
+            if (payload.error_type === "StreamSafetyViolation") {
+              updateMessage(targetSessionId, assistantMessageId, (current) => ({
+                ...current,
+                streamTrace: appendStreamTrace(
+                  current.streamTrace,
+                  streamErrorTrace(payload),
+                ),
+              }));
+              return;
+            }
+
             const message = `Stream request failed: ${payload.message}`;
             updateMessage(targetSessionId, assistantMessageId, (current) => ({
               ...current,
@@ -442,6 +470,21 @@ function streamEventTrace(
 function retrievalTrace(payload: ChatStreamRetrievalPayload): TraceStep {
   return {
     step: "retrieval",
+    ...payload,
+  };
+}
+
+function streamGuardTrace(payload: ChatStreamGuardPayload): TraceStep {
+  return {
+    step: "stream_guard",
+    ...payload,
+  };
+}
+
+function streamErrorTrace(payload: ChatStreamErrorPayload): TraceStep {
+  return {
+    step: "error",
+    status: "failed",
     ...payload,
   };
 }
