@@ -56,6 +56,11 @@ def load_context_node(
             "load_context",
             status="loaded",
             turn_count=len(state.recent_turns),
+            cache_status=getattr(
+                context.conversation_memory_service,
+                "last_cache_status",
+                None,
+            ),
         )
     except Exception as exc:
         state.errors.append(f"load_context: {exc}")
@@ -195,6 +200,10 @@ def shopping_guide_node(
             budget_min=state.budget_min,
             budget_max=state.budget_max,
             candidate_count=len(state.product_candidates),
+            product_ids=[
+                candidate.product_id for candidate in state.product_candidates
+            ],
+            cache_status=getattr(product_service, "last_cache_status", None),
         )
 
         state.citations = knowledge_service.search_knowledge(
@@ -207,6 +216,7 @@ def shopping_guide_node(
             "knowledge_retrieval",
             category_id=state.category_id,
             citation_count=len(state.citations),
+            cache_status=getattr(knowledge_service, "last_cache_status", None),
         )
         return state
     except Exception as exc:
@@ -237,6 +247,7 @@ def product_knowledge_node(
             "knowledge_retrieval",
             category_id=state.category_id,
             citation_count=len(state.citations),
+            cache_status=getattr(knowledge_service, "last_cache_status", None),
         )
         return state
     except Exception as exc:
@@ -314,6 +325,7 @@ def compare_node(
                 "knowledge_retrieval",
                 category_id=state.category_id,
                 citation_count=len(state.citations),
+                cache_status=getattr(knowledge_service, "last_cache_status", None),
             )
         return state
     except Exception as exc:
@@ -449,6 +461,7 @@ def _product_retrieval_service(
         db=context.db,
         embedding_service=context.embedding_service,
         chroma_client=context.chroma_client,
+        cache_service=context.cache_service,
     )
     return context.product_retrieval_service
 
@@ -464,6 +477,7 @@ def _knowledge_retrieval_service(
         db=context.db,
         embedding_service=context.embedding_service,
         chroma_client=context.chroma_client,
+        cache_service=context.cache_service,
     )
     return context.knowledge_retrieval_service
 

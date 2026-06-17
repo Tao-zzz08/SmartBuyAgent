@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.context import AgentRuntimeContext
 from app.agent.workflow import AgentWorkflow
+from app.cache.cache_service import CacheService
 from app.chat.conversation_memory import ConversationMemoryService
 from app.chat.llm_answer_composer import LLMAnswerComposer
 from app.chat.product_comparison import CompareContext, ProductComparisonService
@@ -25,10 +26,12 @@ class ChatService:
         query_understanding_service: QueryUnderstandingService | None = None,
         response_composer: ResponseComposer | None = None,
         llm_answer_composer: LLMAnswerComposer | None = None,
+        cache_service: CacheService | None = None,
     ) -> None:
         self.db = db
         self.embedding_service = embedding_service
         self.chroma_client = chroma_client
+        self.cache_service = cache_service
         self.query_understanding_service = (
             query_understanding_service or QueryUnderstandingService()
         )
@@ -39,6 +42,7 @@ class ChatService:
                 db=db,
                 embedding_service=embedding_service,
                 chroma_client=chroma_client,
+                cache_service=cache_service,
             )
             if db is not None
             else None
@@ -48,12 +52,15 @@ class ChatService:
                 db=db,
                 embedding_service=embedding_service,
                 chroma_client=chroma_client,
+                cache_service=cache_service,
             )
             if db is not None
             else None
         )
         self.conversation_memory_service = (
-            ConversationMemoryService(db) if db is not None else None
+            ConversationMemoryService(db, cache_service=cache_service)
+            if db is not None
+            else None
         )
         self.product_comparison_service = (
             ProductComparisonService(db=db) if db is not None else None
@@ -105,4 +112,5 @@ class ChatService:
             llm_answer_composer=self.llm_answer_composer,
             conversation_memory_service=self.conversation_memory_service,
             product_comparison_service=self.product_comparison_service,
+            cache_service=self.cache_service,
         )

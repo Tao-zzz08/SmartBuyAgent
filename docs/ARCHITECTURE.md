@@ -4,9 +4,10 @@
 
 SmartBuyAgent is a RAG + Agent shopping-guide prototype for new retail product scenarios. It supports phones, shoes, and skincare as MVP categories.
 
-The system has four main layers:
+The system has five main layers:
 
-- Data layer: SQLite tables, Markdown knowledge documents, and Chroma indexes.
+- Data layer: MySQL-compatible SQLAlchemy tables, SQLite fallback for lightweight local/test usage, Markdown knowledge documents, and Chroma indexes.
+- Cache/state layer: Redis for short-lived session cache, retrieval cache, SSE trace state, per-session rate limiting, and feedback counters.
 - Service layer: query understanding, retrieval, response composition, LLM answer composition, memory, and feedback.
 - Agent layer: LangGraph AgentWorkflow and executable agent nodes.
 - Frontend layer: Chat Workspace, in-memory session sidebar, per-answer Agent Timeline, SSE streaming, and feedback UI.
@@ -30,6 +31,34 @@ Core backend modules:
 - `app/agent`: AgentState, runtime context, nodes, and LangGraph workflow.
 
 `ChatService` is the stable API-facing facade. Runtime chat execution is routed through `AgentWorkflow`.
+
+## 2.1 Database and Cache Infrastructure
+
+MySQL is the primary relational database target for persistent data in deployed or full local environments. The project reads `DATABASE_URL`, for example:
+
+```env
+DATABASE_URL=mysql+pymysql://smartbuy:smartbuy@127.0.0.1:3306/smartbuy_agent?charset=utf8mb4
+```
+
+SQLite remains the default fallback when `DATABASE_URL` is not configured:
+
+```env
+DATABASE_URL=sqlite:///./data/smartbuy.db
+```
+
+The SQLAlchemy models use ordinary `VARCHAR`, `TEXT`, `INTEGER`, `DATETIME`, and boolean-like fields and store JSON payloads as text where needed. The code does not depend on MySQL 8-only features such as window functions, CTEs, or CHECK constraint enforcement, so a local Windows MySQL Server 5.7 installation is supported.
+
+Redis is an optional cache and short-term state layer. Redis responsibilities:
+
+- recent session turns cache
+- last candidate product IDs
+- product retrieval result cache
+- knowledge retrieval result cache
+- SSE trace/debug state
+- per-session rate limiting
+- short-term feedback counters
+
+Redis is not the source of truth. If Redis is unavailable or a cache miss happens, the system falls back to MySQL/SQLite, Chroma, and the existing service logic. The final LLM answer is not cached.
 
 ## 3. Frontend Layers
 

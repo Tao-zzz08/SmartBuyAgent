@@ -3,6 +3,8 @@ uvicorn
 pydantic
 pydantic-settings
 sqlalchemy
+pymysql
+redis
 pytest
 httpx
 python-dotenv

@@ -4,6 +4,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
+from app.cache.cache_service import InMemoryCacheService
 from app.chat.conversation_memory import ConversationMemoryService
 from app.chat.response_composer import (
     ChatResponse,
@@ -161,6 +162,73 @@ def test_save_turn_handles_missing_query_understanding_trace() -> None:
         assert json.loads(saved_turn.preferences_json) == []
         assert json.loads(saved_turn.product_ids_json) == ["phone_001"]
         assert json.loads(saved_turn.citation_chunk_ids_json) == ["chunk_001"]
+    finally:
+        db.close()
+        engine.dispose()
+        db_path.unlink(missing_ok=True)
+
+
+def test_recent_turns_cache_reads_from_cache_after_first_query() -> None:
+    engine, db, db_path = _create_test_db("smartbuy_conversation_cache_test.db")
+    try:
+        cache = InMemoryCacheService()
+        memory = ConversationMemoryService(db, cache_service=cache)
+        memory.save_turn(
+            session_id="session_cache",
+            user_query="query 1",
+            chat_response=_chat_response(answer="answer 1"),
+        )
+
+        first = memory.get_recent_turns("session_cache", limit=5)
+        assert [turn.user_query for turn in first] == ["query 1"]
+
+        db.add(
+            ChatTurn(
+                session_id="session_cache",
+                turn_index=2,
+                user_query="query outside cache",
+                assistant_answer="answer outside cache",
+                preferences_json="[]",
+                product_ids_json="[]",
+                citation_chunk_ids_json="[]",
+            )
+        )
+        db.commit()
+
+        second = memory.get_recent_turns("session_cache", limit=5)
+        assert [turn.user_query for turn in second] == ["query 1"]
+    finally:
+        db.close()
+        engine.dispose()
+        db_path.unlink(missing_ok=True)
+
+
+def test_save_turn_invalidates_recent_turns_cache_and_sets_last_candidates() -> None:
+    engine, db, db_path = _create_test_db(
+        "smartbuy_conversation_cache_refresh_test.db"
+    )
+    try:
+        cache = InMemoryCacheService()
+        memory = ConversationMemoryService(db, cache_service=cache)
+        memory.save_turn(
+            session_id="session_cache",
+            user_query="query 1",
+            chat_response=_chat_response(answer="answer 1"),
+        )
+        memory.get_recent_turns("session_cache", limit=5)
+
+        memory.save_turn(
+            session_id="session_cache",
+            user_query="query 2",
+            chat_response=_chat_response(answer="answer 2"),
+        )
+
+        turns = memory.get_recent_turns("session_cache", limit=5)
+        assert [turn.user_query for turn in turns] == ["query 1", "query 2"]
+        assert (
+            cache.get_json("smartbuy:session:session_cache:last_candidates")
+            == ["phone_001"]
+        )
     finally:
         db.close()
         engine.dispose()

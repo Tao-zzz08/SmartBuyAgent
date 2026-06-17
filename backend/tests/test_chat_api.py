@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.chat import (
     get_chat_chroma_client,
+    get_chat_cache_service,
     get_chat_embedding_service,
     get_chat_llm_answer_composer,
 )
+from app.cache.cache_service import InMemoryCacheService
 from app.chat.chat_service import ChatService
 from app.chat.conversation_memory import ConversationMemoryService
 from app.core.db import Base, get_db
@@ -114,6 +116,7 @@ def _override_dependencies(
     chroma_client,
     embedding_service: BaseEmbeddingService | None = None,
     llm_answer_composer=None,
+    cache_service=None,
 ) -> None:
     def override_get_db() -> Generator[Session, None, None]:
         db = TestingSessionLocal()
@@ -130,6 +133,8 @@ def _override_dependencies(
     app.dependency_overrides[get_chat_llm_answer_composer] = (
         lambda: llm_answer_composer or FakeLLMAnswerComposer()
     )
+    if cache_service is not None:
+        app.dependency_overrides[get_chat_cache_service] = lambda: cache_service
 
 
 def _cleanup(engine, db_path: Path, chroma_dir: Path) -> None:
@@ -648,6 +653,91 @@ def test_chat_stream_api_shopping_guide() -> None:
         assert result["citations"]
         assert result["session_id"]
         assert _sse_event_data(events, "done")["status"] == "ok"
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_api_rate_limit_returns_429(monkeypatch) -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_rate_limit_test.db",
+        "chroma_chat_api_rate_limit_test",
+    )
+    cache = InMemoryCacheService()
+    _override_dependencies(TestingSessionLocal, chroma_client, cache_service=cache)
+    monkeypatch.setattr("app.api.chat.settings.RATE_LIMIT_MAX_REQUESTS", 1)
+    monkeypatch.setattr("app.api.chat.settings.RATE_LIMIT_WINDOW_SECONDS", 10)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={"query": "你好", "session_id": "session_rate_limit"},
+        )
+        second_response = client.post(
+            "/api/chat",
+            json={"query": "你好", "session_id": "session_rate_limit"},
+        )
+
+        assert first_response.status_code == 200
+        assert second_response.status_code == 429
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_rate_limit_returns_429(monkeypatch) -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_rate_limit_test.db",
+        "chroma_chat_stream_rate_limit_test",
+    )
+    cache = InMemoryCacheService()
+    _override_dependencies(TestingSessionLocal, chroma_client, cache_service=cache)
+    monkeypatch.setattr("app.api.chat.settings.RATE_LIMIT_MAX_REQUESTS", 1)
+    monkeypatch.setattr("app.api.chat.settings.RATE_LIMIT_WINDOW_SECONDS", 10)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat/stream",
+            json={"query": "你好", "session_id": "session_stream_rate_limit"},
+        )
+        second_response = client.post(
+            "/api/chat/stream",
+            json={"query": "你好", "session_id": "session_stream_rate_limit"},
+        )
+
+        assert first_response.status_code == 200
+        assert second_response.status_code == 429
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_writes_trace_events_to_cache() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_trace_cache_test.db",
+        "chroma_chat_stream_trace_cache_test",
+    )
+    cache = InMemoryCacheService()
+    _override_dependencies(TestingSessionLocal, chroma_client, cache_service=cache)
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "\u9884\u7b973000\uff0c\u63a8\u8350\u4e00\u6b3e\u62cd\u7167\u597d\u7684\u624b\u673a",
+                "debug": True,
+            },
+        )
+        events = _sse_events(response.text)
+        session_event = _sse_event_data(events, "session")
+        cache_key = (
+            f"smartbuy:sse:{session_event['session_id']}:"
+            f"{session_event['request_id']}:trace"
+        )
+        cached_events = cache.get_json(cache_key)
+
+        assert response.status_code == 200
+        assert isinstance(cached_events, list)
+        assert any(event["event"] == "trace" for event in cached_events)
+        assert any(event["event"] == "result" for event in cached_events)
+        assert cached_events[-1]["event"] == "done"
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

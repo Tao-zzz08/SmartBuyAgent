@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.feedback import get_feedback_cache_service
+from app.cache.cache_service import InMemoryCacheService
 from app.core.db import Base, get_db
 from app.main import app
 from app.models import ChatFeedback
@@ -178,5 +180,54 @@ def test_submit_feedback_truncates_answer_preview() -> None:
             assert saved.answer_preview == "a" * 500
         finally:
             db.close()
+    finally:
+        _cleanup(engine, db_path)
+
+
+def test_submit_feedback_updates_short_term_cache_counter() -> None:
+    engine, TestingSessionLocal, db_path = _create_test_session(
+        "smartbuy_feedback_cache_test.db"
+    )
+    _override_db(TestingSessionLocal)
+    cache = InMemoryCacheService()
+    app.dependency_overrides[get_feedback_cache_service] = lambda: cache
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/feedback",
+            json={
+                "session_id": "session_feedback_cache",
+                "rating": "helpful",
+            },
+        )
+
+        assert response.status_code == 200
+        assert cache.get_json("smartbuy:feedback:session_feedback_cache:helpful") == 1
+    finally:
+        _cleanup(engine, db_path)
+
+
+def test_submit_feedback_succeeds_when_cache_fails() -> None:
+    class FailingCache:
+        def incr(self, key: str, ttl_seconds: int | None = None) -> int:
+            raise RuntimeError("cache unavailable")
+
+    engine, TestingSessionLocal, db_path = _create_test_session(
+        "smartbuy_feedback_cache_failure_test.db"
+    )
+    _override_db(TestingSessionLocal)
+    app.dependency_overrides[get_feedback_cache_service] = lambda: FailingCache()
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/feedback",
+            json={
+                "session_id": "session_feedback_cache_failure",
+                "rating": "not_helpful",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "saved"
     finally:
         _cleanup(engine, db_path)

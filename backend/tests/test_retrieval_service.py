@@ -5,6 +5,7 @@ import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.cache.cache_service import InMemoryCacheService
 from app.core.db import Base
 from app.retrieval.chroma_indexer import get_chroma_client, rebuild_all_indexes
 from app.retrieval.retrieval_service import (
@@ -277,6 +278,96 @@ def test_knowledge_retrieval_filters_doc_type() -> None:
 
         assert citations
         assert all(citation.doc_type == "after_sales" for citation in citations)
+    finally:
+        db.close()
+        engine.dispose()
+        db_path.unlink(missing_ok=True)
+        shutil.rmtree(chroma_dir, ignore_errors=True)
+
+
+def test_product_retrieval_uses_cache_on_repeated_query() -> None:
+    engine, db, db_path, chroma_dir, chroma_client, embedding_service = (
+        _prepare_retrieval_stack(
+            "smartbuy_retrieval_product_cache_test.db",
+            "chroma_retrieval_product_cache_test",
+        )
+    )
+    try:
+        cache = InMemoryCacheService()
+        service = ProductRetrievalService(
+            db,
+            embedding_service=embedding_service,
+            chroma_client=chroma_client,
+            cache_service=cache,
+        )
+
+        first = service.search_products(
+            query="鎷嶇収濂界殑鎵嬫満",
+            filters=ProductSearchFilters(
+                category_id="cat_phone",
+                budget_max=3000,
+                preferences=["鎷嶇収"],
+            ),
+            top_k=3,
+        )
+        first_status = service.last_cache_status
+        second = service.search_products(
+            query="鎷嶇収濂界殑鎵嬫満",
+            filters=ProductSearchFilters(
+                category_id="cat_phone",
+                budget_max=3000,
+                preferences=["鎷嶇収"],
+            ),
+            top_k=3,
+        )
+
+        assert first
+        assert first_status == "miss"
+        assert service.last_cache_status == "hit"
+        assert [item.product_id for item in second] == [
+            item.product_id for item in first
+        ]
+    finally:
+        db.close()
+        engine.dispose()
+        db_path.unlink(missing_ok=True)
+        shutil.rmtree(chroma_dir, ignore_errors=True)
+
+
+def test_knowledge_retrieval_uses_cache_on_repeated_query() -> None:
+    engine, db, db_path, chroma_dir, chroma_client, embedding_service = (
+        _prepare_retrieval_stack(
+            "smartbuy_retrieval_knowledge_cache_test.db",
+            "chroma_retrieval_knowledge_cache_test",
+        )
+    )
+    try:
+        cache = InMemoryCacheService()
+        service = KnowledgeRetrievalService(
+            db,
+            embedding_service=embedding_service,
+            chroma_client=chroma_client,
+            cache_service=cache,
+        )
+
+        first = service.search_knowledge(
+            query="涓轰粈涔堟媿鐓т笉鑳藉彧鐪嬪儚绱?",
+            category_id="cat_phone",
+            top_k=3,
+        )
+        first_status = service.last_cache_status
+        second = service.search_knowledge(
+            query="涓轰粈涔堟媿鐓т笉鑳藉彧鐪嬪儚绱?",
+            category_id="cat_phone",
+            top_k=3,
+        )
+
+        assert first
+        assert first_status == "miss"
+        assert service.last_cache_status == "hit"
+        assert [item.chunk_id for item in second] == [
+            item.chunk_id for item in first
+        ]
     finally:
         db.close()
         engine.dispose()

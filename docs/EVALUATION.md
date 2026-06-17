@@ -27,6 +27,11 @@ Current backend tests cover:
 - Conversation memory
 - Feedback API
 - Import scripts for categories, products, and documents
+- Redis-compatible cache service using in-memory fakes
+- Session recent-turn cache behavior
+- Product and knowledge retrieval cache hit/miss behavior
+- Per-session rate limit behavior
+- Feedback short-term counter aggregation
 
 ## 2. Frontend Build
 
@@ -86,6 +91,8 @@ Recommended manual checks:
 
 - Seed data is intentionally small.
 - The default local setup uses mock embedding and mock LLM providers.
+- Backend tests use SQLite and in-memory/fake cache services; they do not require real MySQL or Redis.
+- MySQL 5.7 compatibility is maintained through SQLAlchemy model choices and documented configuration rather than live MySQL integration tests.
 - The project is not connected to live ecommerce inventory.
 - SSE currently streams workflow events and trace, not model tokens.
 - Feedback is stored but does not yet train ranking or retrieval.

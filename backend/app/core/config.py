@@ -12,6 +12,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./data/smartbuy.db"
     CHROMA_DIR: str = "./data/chroma"
     LOG_LEVEL: str = "INFO"
+    REDIS_URL: str | None = None
+    SESSION_CACHE_TTL_SECONDS: int = 1800
+    RETRIEVAL_PRODUCT_CACHE_TTL_SECONDS: int = 600
+    RETRIEVAL_KNOWLEDGE_CACHE_TTL_SECONDS: int = 1800
+    SSE_TRACE_TTL_SECONDS: int = 1800
+    RATE_LIMIT_WINDOW_SECONDS: int = 10
+    RATE_LIMIT_MAX_REQUESTS: int = 5
+    FEEDBACK_CACHE_TTL_SECONDS: int = 604800
     EMBEDDING_PROVIDER: str = "mock"
     EMBEDDING_DIM: int = 32
     EMBEDDING_API_BASE: str | None = None

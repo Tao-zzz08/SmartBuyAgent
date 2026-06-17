@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import hashlib
 import json
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.cache.cache_service import CacheService
+from app.core.config import settings
 from app.models import DocumentChunk, Product, ProductAttribute, ProductTag
 from app.retrieval.chroma_indexer import (
     KNOWLEDGE_COLLECTION,
@@ -75,6 +78,96 @@ def parse_json_safe(text: str | None, default: Any) -> Any:
         return json.loads(text)
     except json.JSONDecodeError:
         return default
+
+
+def _cache_key(namespace: str, payload: dict[str, Any]) -> str:
+    normalized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return f"smartbuy:retrieval:{namespace}:{digest}"
+
+
+def _candidate_cache_entry(candidate: ProductCandidate) -> dict[str, Any]:
+    return {
+        "product_id": candidate.product_id,
+        "distance": candidate.distance,
+        "score": candidate.score,
+    }
+
+
+def _candidate_from_cache_entry(
+    db: Session,
+    entry: dict[str, Any],
+) -> ProductCandidate | None:
+    product_id = entry.get("product_id")
+    if not isinstance(product_id, str):
+        return None
+    candidate = load_product_detail(
+        db,
+        product_id=product_id,
+        distance=_float_or_none(entry.get("distance")),
+    )
+    if candidate is None:
+        return None
+    return replace(candidate, score=_float_or_none(entry.get("score")) or candidate.score)
+
+
+def _citation_to_cache(citation: Citation) -> dict[str, Any]:
+    return {
+        "chunk_id": citation.chunk_id,
+        "document_id": citation.document_id,
+        "title": citation.title,
+        "section": citation.section,
+        "section_path": citation.section_path,
+        "source_file": citation.source_file,
+        "doc_type": citation.doc_type,
+        "category_id": citation.category_id,
+        "category_path": citation.category_path,
+        "content_preview": citation.content_preview,
+        "distance": citation.distance,
+        "score": citation.score,
+    }
+
+
+def _citation_from_cache(value: dict[str, Any]) -> Citation | None:
+    chunk_id = value.get("chunk_id")
+    document_id = value.get("document_id")
+    if not isinstance(chunk_id, str) or not isinstance(document_id, str):
+        return None
+    return Citation(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        title=value.get("title") if isinstance(value.get("title"), str) else None,
+        section=value.get("section") if isinstance(value.get("section"), str) else None,
+        section_path=value.get("section_path")
+        if isinstance(value.get("section_path"), str)
+        else None,
+        source_file=value.get("source_file")
+        if isinstance(value.get("source_file"), str)
+        else None,
+        doc_type=value.get("doc_type") if isinstance(value.get("doc_type"), str) else None,
+        category_id=value.get("category_id")
+        if isinstance(value.get("category_id"), str)
+        else None,
+        category_path=value.get("category_path")
+        if isinstance(value.get("category_path"), str)
+        else None,
+        content_preview=str(value.get("content_preview") or ""),
+        distance=_float_or_none(value.get("distance")),
+        score=_float_or_none(value.get("score")) or 0.0,
+    )
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_product_filters(
@@ -356,10 +449,13 @@ class ProductRetrievalService:
         db: Session,
         embedding_service: BaseEmbeddingService,
         chroma_client=None,
+        cache_service: CacheService | None = None,
     ) -> None:
         self.db = db
         self.embedding_service = embedding_service
         self.chroma_client = chroma_client or get_chroma_client()
+        self.cache_service = cache_service
+        self.last_cache_status = "disabled" if cache_service is None else "miss"
 
     def search_products(
         self,
@@ -369,8 +465,27 @@ class ProductRetrievalService:
         semantic_top_k: int = 30,
     ) -> list[ProductCandidate]:
         product_filters = _as_product_filters(filters)
+        cache_key = _cache_key(
+            "products",
+            {
+                "query": query,
+                "category_id": product_filters.category_id,
+                "budget_min": product_filters.budget_min,
+                "budget_max": product_filters.budget_max,
+                "stock_only": product_filters.stock_only,
+                "brand_exclude": product_filters.brand_exclude,
+                "preferences": product_filters.preferences,
+                "top_k": top_k,
+                "semantic_top_k": semantic_top_k,
+            },
+        )
+        cached_candidates = self._get_cached_candidates(cache_key)
+        if cached_candidates is not None:
+            return cached_candidates
+
         allowed_products = self._filter_products(product_filters)
         if not allowed_products:
+            self._set_cached_candidates(cache_key, [])
             return []
 
         allowed_product_ids = {product.id for product in allowed_products}
@@ -408,11 +523,55 @@ class ProductRetrievalService:
                 if len(candidates) >= candidate_limit:
                     break
 
-        return _rerank_product_candidates(
+        results = _rerank_product_candidates(
             candidates,
             query=query,
             preferences=product_filters.preferences,
         )[:top_k]
+        self._set_cached_candidates(cache_key, results)
+        return results
+
+    def _get_cached_candidates(
+        self,
+        cache_key: str,
+    ) -> list[ProductCandidate] | None:
+        if self.cache_service is None:
+            self.last_cache_status = "disabled"
+            return None
+        try:
+            cached = self.cache_service.get_json(cache_key)
+        except Exception:
+            self.last_cache_status = "failed"
+            return None
+        if not isinstance(cached, list):
+            self.last_cache_status = "miss"
+            return None
+
+        candidates: list[ProductCandidate] = []
+        for item in cached:
+            if not isinstance(item, dict):
+                continue
+            candidate = _candidate_from_cache_entry(self.db, item)
+            if candidate is not None:
+                candidates.append(candidate)
+        self.last_cache_status = "hit"
+        return candidates
+
+    def _set_cached_candidates(
+        self,
+        cache_key: str,
+        candidates: list[ProductCandidate],
+    ) -> None:
+        if self.cache_service is None:
+            return
+        try:
+            self.cache_service.set_json(
+                cache_key,
+                [_candidate_cache_entry(candidate) for candidate in candidates],
+                ttl_seconds=settings.RETRIEVAL_PRODUCT_CACHE_TTL_SECONDS,
+            )
+        except Exception:
+            self.last_cache_status = "failed"
 
     def _filter_products(self, filters: ProductSearchFilters) -> list[Product]:
         statement = select(Product)
@@ -474,10 +633,13 @@ class KnowledgeRetrievalService:
         db: Session,
         embedding_service: BaseEmbeddingService,
         chroma_client=None,
+        cache_service: CacheService | None = None,
     ) -> None:
         self.db = db
         self.embedding_service = embedding_service
         self.chroma_client = chroma_client or get_chroma_client()
+        self.cache_service = cache_service
+        self.last_cache_status = "disabled" if cache_service is None else "miss"
 
     def search_knowledge(
         self,
@@ -486,6 +648,19 @@ class KnowledgeRetrievalService:
         doc_type: str | None = None,
         top_k: int = 5,
     ) -> list[Citation]:
+        cache_key = _cache_key(
+            "knowledge",
+            {
+                "query": query,
+                "category_id": category_id,
+                "doc_type": doc_type,
+                "top_k": top_k,
+            },
+        )
+        cached_citations = self._get_cached_citations(cache_key)
+        if cached_citations is not None:
+            return cached_citations
+
         collection = _get_chroma_collection(self.chroma_client, KNOWLEDGE_COLLECTION)
         collection_count = collection.count() if collection is not None else 0
         if collection_count == 0:
@@ -561,7 +736,48 @@ class KnowledgeRetrievalService:
                 )
             )
 
-        return _rerank_citations(citations)[:top_k]
+        results = _rerank_citations(citations)[:top_k]
+        self._set_cached_citations(cache_key, results)
+        return results
+
+    def _get_cached_citations(self, cache_key: str) -> list[Citation] | None:
+        if self.cache_service is None:
+            self.last_cache_status = "disabled"
+            return None
+        try:
+            cached = self.cache_service.get_json(cache_key)
+        except Exception:
+            self.last_cache_status = "failed"
+            return None
+        if not isinstance(cached, list):
+            self.last_cache_status = "miss"
+            return None
+
+        citations = [
+            citation
+            for item in cached
+            if isinstance(item, dict)
+            for citation in [_citation_from_cache(item)]
+            if citation is not None
+        ]
+        self.last_cache_status = "hit"
+        return citations
+
+    def _set_cached_citations(
+        self,
+        cache_key: str,
+        citations: list[Citation],
+    ) -> None:
+        if self.cache_service is None:
+            return
+        try:
+            self.cache_service.set_json(
+                cache_key,
+                [_citation_to_cache(citation) for citation in citations],
+                ttl_seconds=settings.RETRIEVAL_KNOWLEDGE_CACHE_TTL_SECONDS,
+            )
+        except Exception:
+            self.last_cache_status = "failed"
 
     def _fallback_citations(
         self,

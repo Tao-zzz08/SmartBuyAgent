@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from app.cache.cache_service import CacheService
     from app.chat.conversation_memory import ConversationMemoryService
     from app.chat.followup_rewriter import FollowUpQueryRewriter
     from app.chat.llm_answer_composer import LLMAnswerComposer
@@ -32,3 +33,4 @@ class AgentRuntimeContext:
     conversation_memory_service: ConversationMemoryService | None = None
     followup_rewriter: FollowUpQueryRewriter | None = None
     product_comparison_service: ProductComparisonService | None = None
+    cache_service: CacheService | None = None

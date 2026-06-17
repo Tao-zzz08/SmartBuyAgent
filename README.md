@@ -382,7 +382,9 @@ Backend:
 
 - FastAPI
 - SQLAlchemy
-- SQLite
+- MySQL-compatible persistent database
+- SQLite fallback for lightweight local/test usage
+- Redis optional cache/state layer
 - Chroma
 - LangGraph
 - Mock embedding and OpenAI-compatible embedding provider
@@ -574,9 +576,42 @@ npm run dev
 Environment configuration:
 
 - `.env.example` contains non-secret defaults.
+- `DATABASE_URL` can point to MySQL 5.7 with `pymysql`, or remain SQLite for local fallback.
+- `REDIS_URL` enables optional Redis cache, rate limit, SSE trace state, and feedback counters.
 - Default embedding provider is `mock`.
 - Default LLM provider is `mock`.
 - Do not commit real API keys.
+
+## 8.1 Infrastructure Configuration
+
+MySQL is the primary relational database target for persistent data. SQLite remains available as the default lightweight fallback.
+
+MySQL 5.7 compatible `DATABASE_URL` example:
+
+```env
+DATABASE_URL=mysql+pymysql://smartbuy:smartbuy@127.0.0.1:3306/smartbuy_agent?charset=utf8mb4
+REDIS_URL=redis://localhost:6379/0
+```
+
+Windows local MySQL Server 5.7 does not need its installation path in `DATABASE_URL`; it only needs the running MySQL service and connection credentials.
+
+Create a local MySQL 5.7 database:
+
+```sql
+CREATE DATABASE smartbuy_agent DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE USER 'smartbuy'@'localhost' IDENTIFIED BY 'smartbuy';
+GRANT ALL PRIVILEGES ON smartbuy_agent.* TO 'smartbuy'@'localhost';
+
+CREATE USER 'smartbuy'@'127.0.0.1' IDENTIFIED BY 'smartbuy';
+GRANT ALL PRIVILEGES ON smartbuy_agent.* TO 'smartbuy'@'127.0.0.1';
+
+FLUSH PRIVILEGES;
+```
+
+Redis is used for short-lived session cache, last candidate IDs, product/knowledge retrieval cache, SSE trace/debug state, per-session rate limiting, and feedback aggregation. Redis failure does not block the core chat or feedback flows; cache misses fall back to the database, Chroma, and existing services.
+
+`docker-compose.yml` provides an optional local MySQL 5.7 and Redis development environment. The code avoids MySQL 8-only SQL features.
 
 ## 9. Data Initialization and Index Build
 
