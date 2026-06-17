@@ -144,10 +144,11 @@ data: {"status":"error"}
 
 Notes:
 
-- Stage Stream-1 emits realtime node-level events while the workflow is running.
+- Stage Stream-2 emits realtime node-level events while the workflow is running.
 - `node_end.duration_ms` reports per-node elapsed time.
+- Product and knowledge retrieval are exposed as separate stream nodes, so the frontend can show their independent start/end timing.
 - Retrieval events summarize product recall, knowledge retrieval, or in-session comparison without sending long source text.
-- Token events stream the final answer text in chunks. Product cards and citations still come only from retrieval/comparison services.
+- Token events prefer provider-native LLM streaming through `stream_chat`; providers without native streaming fall back to chunked non-streaming output. Product cards and citations still come only from retrieval/comparison services.
 - Memory saving is handled by the API layer and stores the original query.
 - The endpoint can return `429 Too Many Requests` before an SSE stream starts.
 

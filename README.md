@@ -39,7 +39,7 @@ SmartBuyAgent 是智能导购、推荐解释和商品知识问答系统，不是
 - 规则版追问改写：支持预算变化、模糊指代和序号引用。
 - 候选商品内比较：只比较上一轮候选商品，不全库乱比。
 - LangGraph AgentWorkflow：编排上下文读取、追问改写、意图路由、商品召回、知识检索、候选比较和回答生成。
-- SSE 调试流：输出 `session`、`trace`、`result`、`done`、`error` 事件。
+- SSE 调试流：输出 `session`、`node_start`、`retrieval`、`token`、`node_end`、`trace`、`result`、`done`、`error` 事件。
 - 前端 Chat Workspace：左侧内存会话栏、中间聊天流、底部输入框、每条回答独立展开 Debug。
 - Feedback Loop：支持 `helpful` / `not_helpful` 反馈收集。
 
@@ -192,7 +192,7 @@ SSE 调试接口，响应类型为 `text/event-stream`。
 - `done`：流结束
 - `error`：流级别错误
 
-当前 `/api/chat/stream` 已支持节点级实时 SSE、检索过程事件、节点耗时和回答 token chunk。最终 `result` 仍然是 `answer`、`product_cards`、`citations`、`trace` 和 `session_id` 的权威结果。
+当前 `/api/chat/stream` 已支持节点级实时 SSE、独立的商品/知识检索节点事件、节点耗时和 LLM provider 原生 token chunk。若 provider 不支持原生流式输出，会降级为非流式回答切块。最终 `result` 仍然是 `answer`、`product_cards`、`citations`、`trace` 和 `session_id` 的权威结果。
 
 ### `POST /api/feedback`
 
@@ -324,7 +324,7 @@ SmartBuyAgent 不是完整电商交易系统，不包含：
 - 接入更丰富的真实商品数据源。
 - 构建更完整的自动化评测集。
 - 基于 feedback 做检索和推荐质量分析 dashboard。
-- 实现真正节点级实时 streaming。
+- 继续优化 streaming 的前端展示和异常恢复体验。
 - 引入更复杂的长期个性化记忆。
 - 增加部署、监控和日志分析。
 - 扩展敏感或强监管品类的安全评测。
@@ -376,7 +376,7 @@ The runtime `/api/chat` path is routed through a LangGraph-based `AgentWorkflow`
 - Rule-based follow-up rewrite for budget changes, vague references, and ordinal references.
 - In-session product comparison restricted to previous candidate product IDs.
 - LangGraph AgentWorkflow orchestration for context loading, rewrite, routing, retrieval, comparison, and response composition.
-- SSE debug stream for session, trace, result, done, and error events.
+- SSE debug stream for session, node_start, retrieval, token, node_end, trace, result, done, and error events.
 - Frontend Chat Workspace with an in-memory session sidebar, chat message stream, bottom input bar, and per-answer expandable Debug panels.
 - Feedback loop with `helpful` / `not_helpful` ratings for future evaluation.
 
@@ -531,7 +531,7 @@ Events:
 - `done`: stream completion
 - `error`: stream-level failure
 
-`/api/chat/stream` now emits realtime node-level SSE events, retrieval progress, node timing, and answer token chunks. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
+`/api/chat/stream` now emits realtime node-level SSE events, separate product/knowledge retrieval node events, node timing, and provider-native LLM token chunks. If the provider does not support native streaming, it falls back to chunked non-streaming output. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
 
 ### `POST /api/feedback`
 
@@ -723,7 +723,7 @@ The following items remain future work:
 - Connect richer real product data sources.
 - Build a broader automated evaluation suite.
 - Analyze feedback for retrieval and recommendation quality dashboards.
-- Implement true node-level real-time streaming.
+- Continue improving streaming frontend display and error recovery.
 - Add more advanced long-term personalization memory.
 - Add deployment, monitoring, and log analysis.
 - Expand safety evaluation for regulated or sensitive product categories.

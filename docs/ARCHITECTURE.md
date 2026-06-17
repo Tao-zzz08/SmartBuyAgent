@@ -173,8 +173,9 @@ Feedback does not affect current retrieval, ranking, or recommendation behavior.
 `POST /api/chat/stream` uses a realtime AgentStreamRunner that reuses the executable agent nodes and emits SSE events as nodes run:
 
 - `node_start` before a node executes
+- separate `product_retrieval` and `knowledge_retrieval` nodes with independent timing
 - `retrieval` when product recall, knowledge retrieval, or product comparison completes
-- `token` chunks for the final answer text
+- `token` chunks from provider-native LLM streaming when available, with a chunked non-streaming fallback
 - `trace` for backwards-compatible debug trace steps
 - `node_end` with `duration_ms`
 - `error` when a node fails

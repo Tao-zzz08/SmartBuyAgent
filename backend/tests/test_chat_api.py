@@ -75,6 +75,29 @@ class FakeLLMAnswerComposer:
         )
         return self.answer
 
+    def stream_compose(
+        self,
+        query,
+        query_result,
+        product_candidates=None,
+        citations=None,
+        on_token=None,
+    ) -> str:
+        self.calls.append(
+            {
+                "query": query,
+                "query_result": query_result,
+                "product_candidates": product_candidates or [],
+                "citations": citations or [],
+                "stream": True,
+            }
+        )
+        for index in range(0, len(self.answer), 8):
+            delta = self.answer[index : index + 8]
+            if on_token is not None:
+                on_token(delta)
+        return self.answer
+
 
 def _create_test_session(db_name: str):
     db_path = PROJECT_ROOT / "data" / db_name
@@ -657,11 +680,13 @@ def test_chat_stream_api_shopping_guide() -> None:
         assert result["product_cards"]
         assert result["citations"]
         assert result["session_id"]
-        assert any(
-            event["data"].get("node") == "shopping_guide"
+        node_starts = [
+            event["data"].get("node")
             for event in events
             if event["event"] == "node_start"
-        )
+        ]
+        assert "product_retrieval" in node_starts
+        assert "knowledge_retrieval" in node_starts
         assert any(
             isinstance(event["data"].get("duration_ms"), int)
             and event["data"]["duration_ms"] >= 0

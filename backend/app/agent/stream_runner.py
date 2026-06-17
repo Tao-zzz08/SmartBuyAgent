@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from datetime import datetime, timezone
+import queue
+import threading
 import time
 from typing import Any, Callable
 
@@ -14,14 +16,18 @@ from app.agent.nodes import (
     follow_up_rewrite_node,
     intent_router_node,
     load_context_node,
-    product_knowledge_node,
-    response_compose_node,
     save_trace_node,
-    shopping_guide_node,
 )
 from app.agent.state import AgentState, create_initial_agent_state
 from app.agent.workflow import _route_name_for_state
+from app.chat.llm_answer_composer import SAFE_LLM_FALLBACK_ANSWER
 from app.chat.product_comparison import CompareContext
+from app.chat.response_composer import ChatResponse, ResponseComposer
+from app.retrieval.retrieval_service import (
+    KnowledgeRetrievalService,
+    ProductRetrievalService,
+    ProductSearchFilters,
+)
 from app.streaming.events import StreamEvent
 from app.streaming.event_emitter import StreamEventEmitter
 
@@ -30,17 +36,17 @@ NodeFunc = Callable[[AgentState, AgentRuntimeContext], AgentState]
 
 
 NODE_LABELS = {
-    "load_context": "上下文读取",
-    "follow_up_rewrite": "追问改写",
-    "intent_router": "意图识别",
-    "route_by_intent": "意图路由",
-    "shopping_guide": "导购召回",
-    "product_knowledge": "知识问答",
-    "compare": "候选商品比较",
-    "clarification": "澄清回复",
-    "chitchat": "闲聊回复",
-    "response_compose": "回答生成",
-    "save_trace": "Trace 记录",
+    "load_context": "Load context",
+    "follow_up_rewrite": "Follow-up rewrite",
+    "intent_router": "Intent routing",
+    "route_by_intent": "Route by intent",
+    "product_retrieval": "Product retrieval",
+    "knowledge_retrieval": "Knowledge retrieval",
+    "product_comparison": "Product comparison",
+    "clarification": "Clarification",
+    "chitchat": "Chitchat",
+    "response_compose": "Response compose",
+    "save_trace": "Save trace",
 }
 
 
@@ -68,95 +74,61 @@ class AgentStreamRunner:
         token_answer_emitted = False
 
         try:
-            for event in self._run_node(
-                state,
-                emitter,
-                "load_context",
-                load_context_node,
-            ):
-                yield event
-            for event in self._run_node(
+            yield from self._run_node(state, emitter, "load_context", load_context_node)
+            yield from self._run_node(
                 state,
                 emitter,
                 "follow_up_rewrite",
                 follow_up_rewrite_node,
-            ):
-                yield event
-            for event in self._run_node(
-                state,
-                emitter,
-                "intent_router",
-                intent_router_node,
-            ):
-                yield event
-            for event in self._run_route_node(state, emitter):
-                yield event
+            )
+            yield from self._run_node(state, emitter, "intent_router", intent_router_node)
+            yield from self._run_route_node(state, emitter)
 
             route = _route_name_for_state(state)
             if route == "compare":
-                for event in self._run_node(state, emitter, "compare", compare_node):
-                    yield event
-                for event in self._run_response_node(state, emitter):
-                    token_answer_emitted = True
-                    yield event
+                yield from self._run_node(
+                    state,
+                    emitter,
+                    "product_comparison",
+                    compare_node,
+                )
+                yield from self._run_response_node(state, emitter)
+                token_answer_emitted = True
             elif route == "clarification":
-                for event in self._run_node(
+                yield from self._run_node(
                     state,
                     emitter,
                     "clarification",
                     clarification_node,
                     emit_tokens=True,
-                ):
-                    token_answer_emitted = True
-                    yield event
+                )
+                token_answer_emitted = True
             elif route == "shopping_guide":
-                for event in self._run_node(
-                    state,
-                    emitter,
-                    "shopping_guide",
-                    shopping_guide_node,
-                ):
-                    yield event
-                for event in self._run_response_node(state, emitter):
-                    token_answer_emitted = True
-                    yield event
+                yield from self._run_product_retrieval_node(state, emitter)
+                yield from self._run_knowledge_retrieval_node(state, emitter, top_k=3)
+                yield from self._run_response_node(state, emitter)
+                token_answer_emitted = True
             elif route == "product_knowledge":
-                for event in self._run_node(
-                    state,
-                    emitter,
-                    "product_knowledge",
-                    product_knowledge_node,
-                ):
-                    yield event
-                for event in self._run_response_node(state, emitter):
-                    token_answer_emitted = True
-                    yield event
+                yield from self._run_knowledge_retrieval_node(state, emitter, top_k=5)
+                yield from self._run_response_node(state, emitter)
+                token_answer_emitted = True
             elif route == "chitchat":
-                for event in self._run_node(
+                yield from self._run_node(
                     state,
                     emitter,
                     "chitchat",
                     chitchat_node,
                     emit_tokens=True,
-                ):
-                    token_answer_emitted = True
-                    yield event
+                )
+                token_answer_emitted = True
             else:
-                for event in self._run_response_node(state, emitter):
-                    token_answer_emitted = True
-                    yield event
+                yield from self._run_response_node(state, emitter)
+                token_answer_emitted = True
 
             if not token_answer_emitted and state.answer:
-                for event in self._emit_answer_tokens(emitter, state.answer):
-                    yield event
+                yield from self._emit_answer_tokens(emitter, state.answer)
 
-            for event in self._run_node(
-                state,
-                emitter,
-                "save_trace",
-                save_trace_node,
-            ):
-                yield event
+            yield from self._run_node(state, emitter, "save_trace", save_trace_node)
             return state
         except Exception as exc:
             state.errors.append(f"agent_stream: {exc}")
@@ -168,19 +140,6 @@ class AgentStreamRunner:
                 }
             )
             raise
-
-    def _run_response_node(
-        self,
-        state: AgentState,
-        emitter: StreamEventEmitter,
-    ) -> Generator[StreamEvent, None, None]:
-        yield from self._run_node(
-            state,
-            emitter,
-            "response_compose",
-            response_compose_node,
-            emit_tokens=True,
-        )
 
     def _run_route_node(
         self,
@@ -196,12 +155,303 @@ class AgentStreamRunner:
             )
             return inner_state
 
+        yield from self._run_node(state, emitter, "route_by_intent", route_node)
+
+    def _run_product_retrieval_node(
+        self,
+        state: AgentState,
+        emitter: StreamEventEmitter,
+    ) -> Generator[StreamEvent, None, None]:
+        def product_retrieval_node(
+            inner_state: AgentState,
+            context: AgentRuntimeContext,
+        ) -> AgentState:
+            product_service = _product_retrieval_service(context)
+            if product_service is None:
+                inner_state.errors.append("product_retrieval: service unavailable")
+                return append_trace(inner_state, "product_retrieval", status="skipped")
+
+            product_filters = ProductSearchFilters(
+                category_id=inner_state.category_id,
+                budget_min=inner_state.budget_min,
+                budget_max=inner_state.budget_max,
+                stock_only=True,
+                preferences=inner_state.preferences,
+            )
+            inner_state.product_candidates = product_service.search_products(
+                query=inner_state.effective_query,
+                filters=product_filters,
+                top_k=3,
+            )
+            inner_state.trace.append(
+                {
+                    "step": "product_retrieval",
+                    "category_id": inner_state.category_id,
+                    "budget_min": inner_state.budget_min,
+                    "budget_max": inner_state.budget_max,
+                    "candidate_count": len(inner_state.product_candidates),
+                    "product_ids": [
+                        candidate.product_id
+                        for candidate in inner_state.product_candidates
+                    ],
+                    "cache_status": getattr(product_service, "last_cache_status", None),
+                }
+            )
+            return inner_state
+
         yield from self._run_node(
             state,
             emitter,
-            "route_by_intent",
-            route_node,
+            "product_retrieval",
+            product_retrieval_node,
         )
+
+    def _run_knowledge_retrieval_node(
+        self,
+        state: AgentState,
+        emitter: StreamEventEmitter,
+        *,
+        top_k: int,
+    ) -> Generator[StreamEvent, None, None]:
+        def knowledge_retrieval_node(
+            inner_state: AgentState,
+            context: AgentRuntimeContext,
+        ) -> AgentState:
+            knowledge_service = _knowledge_retrieval_service(context)
+            if knowledge_service is None:
+                inner_state.errors.append("knowledge_retrieval: service unavailable")
+                return append_trace(inner_state, "knowledge_retrieval", status="skipped")
+
+            inner_state.citations = knowledge_service.search_knowledge(
+                query=inner_state.effective_query,
+                category_id=inner_state.category_id,
+                top_k=top_k,
+            )
+            inner_state.trace.append(
+                {
+                    "step": "knowledge_retrieval",
+                    "category_id": inner_state.category_id,
+                    "citation_count": len(inner_state.citations),
+                    "chunk_ids": [
+                        citation.chunk_id for citation in inner_state.citations
+                    ],
+                    "cache_status": getattr(knowledge_service, "last_cache_status", None),
+                }
+            )
+            return inner_state
+
+        yield from self._run_node(
+            state,
+            emitter,
+            "knowledge_retrieval",
+            knowledge_retrieval_node,
+        )
+
+    def _run_response_node(
+        self,
+        state: AgentState,
+        emitter: StreamEventEmitter,
+    ) -> Generator[StreamEvent, None, None]:
+        started_at = datetime.now(timezone.utc).isoformat()
+        start_time = time.perf_counter()
+        trace_start = len(state.trace)
+        token_answer_emitted = False
+
+        emitter.emit(
+            "node_start",
+            {
+                "node": "response_compose",
+                "label": NODE_LABELS["response_compose"],
+                "started_at": started_at,
+                "status": "running",
+            },
+        )
+        yield from emitter.drain()
+
+        try:
+            response, token_answer_emitted = yield from self._compose_response(
+                state,
+                emitter,
+            )
+            _apply_response(state, response)
+            append_trace(state, "response_compose", status="composed")
+        except Exception as exc:
+            duration_ms = _duration_ms(start_time)
+            emitter.emit(
+                "error",
+                {
+                    "failed_node": "response_compose",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                    "duration_ms": duration_ms,
+                },
+            )
+            emitter.emit(
+                "node_end",
+                {
+                    "node": "response_compose",
+                    "label": NODE_LABELS["response_compose"],
+                    "status": "failed",
+                    "duration_ms": duration_ms,
+                },
+            )
+            yield from emitter.drain()
+            raise
+
+        new_trace_steps = state.trace[trace_start:]
+        for trace_step in new_trace_steps:
+            emitter.emit("trace", trace_step)
+            yield from emitter.drain()
+
+        if state.answer and not token_answer_emitted:
+            yield from self._emit_answer_tokens(emitter, state.answer)
+
+        duration_ms = _duration_ms(start_time)
+        status = _node_status("response_compose", new_trace_steps)
+        emitter.emit(
+            "node_end",
+            {
+                "node": "response_compose",
+                "label": NODE_LABELS["response_compose"],
+                "status": status,
+                "duration_ms": duration_ms,
+                "summary": _node_summary("response_compose", state, new_trace_steps),
+            },
+        )
+        yield from emitter.drain()
+
+    def _compose_response(
+        self,
+        state: AgentState,
+        emitter: StreamEventEmitter,
+    ) -> Generator[StreamEvent, None, tuple[ChatResponse, bool]]:
+        if state.query_result is None:
+            state.errors.append("response_compose: query_result missing")
+            return (
+                ChatResponse(
+                    answer="",
+                    product_cards=[],
+                    citations=[],
+                    trace=[
+                        {
+                            "step": "agent_node",
+                            "node": "response_compose",
+                            "status": "failed",
+                        }
+                    ],
+                ),
+                False,
+            )
+
+        response_composer = self.context.response_composer or ResponseComposer()
+        base_response = response_composer.compose(
+            state.query_result,
+            product_candidates=state.product_candidates,
+            citations=state.citations,
+        )
+
+        if state.answer:
+            return (
+                ChatResponse(
+                    answer=state.answer,
+                    product_cards=base_response.product_cards,
+                    citations=base_response.citations,
+                    trace=base_response.trace,
+                ),
+                False,
+            )
+
+        if state.intent not in {"shopping_guide", "product_knowledge"}:
+            return base_response, False
+
+        if self.context.llm_answer_composer is None:
+            return (
+                _append_response_trace(
+                    base_response,
+                    {"step": "llm_answer", "enabled": False, "status": "disabled"},
+                ),
+                False,
+            )
+
+        llm_answer, emitted_tokens = yield from self._stream_llm_answer(
+            state,
+            emitter,
+        )
+        normalized_answer = llm_answer.strip()
+        if not normalized_answer or normalized_answer == SAFE_LLM_FALLBACK_ANSWER:
+            return (
+                _append_response_trace(
+                    base_response,
+                    {"step": "llm_answer", "enabled": True, "status": "fallback"},
+                ),
+                emitted_tokens,
+            )
+
+        return (
+            ChatResponse(
+                answer=normalized_answer,
+                product_cards=base_response.product_cards,
+                citations=base_response.citations,
+                trace=[
+                    *base_response.trace,
+                    {"step": "llm_answer", "enabled": True, "status": "success"},
+                ],
+            ),
+            emitted_tokens,
+        )
+
+    def _stream_llm_answer(
+        self,
+        state: AgentState,
+        emitter: StreamEventEmitter,
+    ) -> Generator[StreamEvent, None, tuple[str, bool]]:
+        if self.context.llm_answer_composer is None or state.query_result is None:
+            return "", False
+
+        token_queue: queue.Queue[str | None] = queue.Queue()
+        result: dict[str, Any] = {}
+
+        def on_token(delta: str) -> None:
+            token_queue.put(delta)
+
+        def run_compose() -> None:
+            try:
+                result["answer"] = self.context.llm_answer_composer.stream_compose(
+                    query=state.effective_query,
+                    query_result=state.query_result,
+                    product_candidates=state.product_candidates,
+                    citations=state.citations,
+                    on_token=on_token,
+                )
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                result["error"] = exc
+            finally:
+                token_queue.put(None)
+
+        thread = threading.Thread(target=run_compose, daemon=True)
+        thread.start()
+
+        emitted_tokens = False
+        while True:
+            delta = token_queue.get()
+            if delta is None:
+                break
+            emitted_tokens = True
+            emitter.emit(
+                "token",
+                {
+                    "node": "response_compose",
+                    "delta": delta,
+                },
+            )
+            yield from emitter.drain()
+
+        thread.join()
+        error = result.get("error")
+        if isinstance(error, Exception):
+            return SAFE_LLM_FALLBACK_ANSWER, emitted_tokens
+        answer = result.get("answer")
+        return str(answer or ""), emitted_tokens
 
     def _run_node(
         self,
@@ -269,8 +519,7 @@ class AgentStreamRunner:
         if emit_tokens and state.answer:
             answer_after = state.answer
             token_source = answer_after if answer_after != answer_before else answer_after
-            for event in self._emit_answer_tokens(emitter, token_source):
-                yield event
+            yield from self._emit_answer_tokens(emitter, token_source)
 
         duration_ms = _duration_ms(start_time)
         status = _node_status(node_name, new_trace_steps)
@@ -340,9 +589,9 @@ def _failed_node_message(state: AgentState, node_name: str) -> str:
 def _primary_step_for_node(node_name: str) -> str:
     return {
         "intent_router": "query_understanding",
-        "shopping_guide": "product_retrieval",
-        "product_knowledge": "knowledge_retrieval",
-        "compare": "product_comparison",
+        "product_retrieval": "product_retrieval",
+        "knowledge_retrieval": "knowledge_retrieval",
+        "product_comparison": "product_comparison",
         "response_compose": "response_composer",
     }.get(node_name, node_name)
 
@@ -352,20 +601,21 @@ def _node_summary(
     state: AgentState,
     trace_steps: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    if node_name == "shopping_guide":
+    if node_name == "product_retrieval":
         return {
             "returned_products": len(state.product_candidates),
-            "returned_citations": len(state.citations),
-            "product_ids": [
+            "candidate_product_ids": [
                 candidate.product_id for candidate in state.product_candidates
             ],
+            "cache_status": _last_trace_value(trace_steps, "product_retrieval", "cache_status"),
         }
-    if node_name == "product_knowledge":
+    if node_name == "knowledge_retrieval":
         return {
             "returned_chunks": len(state.citations),
             "chunk_ids": [citation.chunk_id for citation in state.citations],
+            "cache_status": _last_trace_value(trace_steps, "knowledge_retrieval", "cache_status"),
         }
-    if node_name == "compare":
+    if node_name == "product_comparison":
         comparison = next(
             (
                 step
@@ -394,6 +644,17 @@ def _node_summary(
             "preferences": state.preferences,
         }
     return {}
+
+
+def _last_trace_value(
+    trace_steps: list[dict[str, Any]],
+    step_name: str,
+    key: str,
+) -> Any:
+    for step in reversed(trace_steps):
+        if step.get("step") == step_name:
+            return step.get(key)
+    return None
 
 
 def _retrieval_events_from_trace(
@@ -444,6 +705,57 @@ def _retrieval_events_from_trace(
             }
         ]
     return []
+
+
+def _product_retrieval_service(
+    context: AgentRuntimeContext,
+) -> ProductRetrievalService | None:
+    if context.product_retrieval_service is not None:
+        return context.product_retrieval_service
+    if context.db is None or context.embedding_service is None:
+        return None
+    context.product_retrieval_service = ProductRetrievalService(
+        db=context.db,
+        embedding_service=context.embedding_service,
+        chroma_client=context.chroma_client,
+        cache_service=context.cache_service,
+    )
+    return context.product_retrieval_service
+
+
+def _knowledge_retrieval_service(
+    context: AgentRuntimeContext,
+) -> KnowledgeRetrievalService | None:
+    if context.knowledge_retrieval_service is not None:
+        return context.knowledge_retrieval_service
+    if context.db is None or context.embedding_service is None:
+        return None
+    context.knowledge_retrieval_service = KnowledgeRetrievalService(
+        db=context.db,
+        embedding_service=context.embedding_service,
+        chroma_client=context.chroma_client,
+        cache_service=context.cache_service,
+    )
+    return context.knowledge_retrieval_service
+
+
+def _apply_response(state: AgentState, response: ChatResponse) -> None:
+    state.answer = response.answer
+    state.product_cards = response.product_cards
+    state.citations = response.citations
+    state.trace.extend(response.trace)
+
+
+def _append_response_trace(
+    response: ChatResponse,
+    trace_step: dict[str, Any],
+) -> ChatResponse:
+    return ChatResponse(
+        answer=response.answer,
+        product_cards=response.product_cards,
+        citations=response.citations,
+        trace=[*response.trace, trace_step],
+    )
 
 
 def _chunk_text(text: str, chunk_size: int = 18) -> list[str]:

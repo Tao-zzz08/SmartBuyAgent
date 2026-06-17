@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+import json
+from typing import Any, Iterator
 
 import httpx
 
@@ -34,6 +35,21 @@ class BaseLLMService(ABC):
     ) -> LLMResponse:
         """Return one chat response for the given messages."""
 
+    def stream_chat(
+        self,
+        messages: list[LLMMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Iterator[str]:
+        """Yield text deltas for the given messages."""
+        response = self.chat(
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        yield response.content
+
 
 class MockLLMService(BaseLLMService):
     provider = "mock"
@@ -59,6 +75,21 @@ class MockLLMService(BaseLLMService):
             provider=self.provider,
             raw=None,
         )
+
+    def stream_chat(
+        self,
+        messages: list[LLMMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Iterator[str]:
+        content = self.chat(
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        ).content
+        for index in range(0, len(content), 12):
+            yield content[index : index + 12]
 
 
 class OpenAICompatibleLLMService(BaseLLMService):
@@ -130,6 +161,55 @@ class OpenAICompatibleLLMService(BaseLLMService):
             raw=body,
         )
 
+    def stream_chat(
+        self,
+        messages: list[LLMMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Iterator[str]:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": message.role, "content": message.content}
+                for message in messages
+            ],
+            "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
+            "temperature": (
+                temperature if temperature is not None else self.temperature
+            ),
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        endpoint = f"{self.api_base}/chat/completions"
+        if self._http_client is not None:
+            response = self._http_client.post(
+                endpoint,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            yield from _iter_openai_compatible_deltas(response.iter_lines())
+            return
+
+        try:
+            with httpx.Client(timeout=self.timeout_seconds) as client:
+                with client.stream(
+                    "POST",
+                    endpoint,
+                    json=payload,
+                    headers=headers,
+                ) as response:
+                    response.raise_for_status()
+                    yield from _iter_openai_compatible_deltas(response.iter_lines())
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"LLM streaming request failed: {exc}") from exc
+
     def _post_chat(self, payload: dict[str, Any], headers: dict[str, str]) -> Any:
         endpoint = f"{self.api_base}/chat/completions"
         if self._http_client is not None:
@@ -191,3 +271,39 @@ def _extract_chat_content(body: Any) -> str:
         raise ValueError("LLM response message missing content")
 
     return content
+
+
+def _iter_openai_compatible_deltas(lines: Any) -> Iterator[str]:
+    for raw_line in lines:
+        if isinstance(raw_line, bytes):
+            line = raw_line.decode("utf-8", errors="ignore")
+        else:
+            line = str(raw_line)
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("data:"):
+            line = line[len("data:") :].strip()
+        if line == "[DONE]":
+            break
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            continue
+        first = choices[0]
+        if not isinstance(first, dict):
+            continue
+        delta = first.get("delta")
+        if isinstance(delta, dict):
+            content = delta.get("content")
+            if isinstance(content, str) and content:
+                yield content
+            continue
+        message = first.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str) and content:
+                yield content

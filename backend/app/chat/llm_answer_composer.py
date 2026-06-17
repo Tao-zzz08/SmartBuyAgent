@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import re
 
@@ -76,18 +77,12 @@ class LLMAnswerComposer:
         if not products and not citation_list:
             return _safe_fallback_answer()
 
-        messages = [
-            LLMMessage(role="system", content=_build_system_prompt()),
-            LLMMessage(
-                role="user",
-                content=_build_user_prompt(
-                    query=query,
-                    query_result=query_result,
-                    product_candidates=products,
-                    citations=citation_list,
-                ),
-            ),
-        ]
+        messages = _build_messages(
+            query=query,
+            query_result=query_result,
+            product_candidates=products,
+            citations=citation_list,
+        )
 
         try:
             response = self.llm_service.chat(messages)
@@ -95,6 +90,60 @@ class LLMAnswerComposer:
             return _safe_fallback_answer()
 
         content = response.content.strip()
+        if not content:
+            return _safe_fallback_answer()
+
+        validation = validate_llm_answer(
+            content,
+            product_candidates=products,
+            citations=citation_list,
+        )
+        if not validation.is_valid:
+            return _safe_fallback_answer()
+
+        return content
+
+    def stream_compose(
+        self,
+        query: str,
+        query_result: QueryUnderstandingResult,
+        product_candidates: list[ProductCandidate] | None = None,
+        citations: list[Citation] | None = None,
+        on_token: Callable[[str], None] | None = None,
+    ) -> str:
+        products = product_candidates or []
+        citation_list = citations or []
+        if not products and not citation_list:
+            return _safe_fallback_answer()
+
+        messages = _build_messages(
+            query=query,
+            query_result=query_result,
+            product_candidates=products,
+            citations=citation_list,
+        )
+
+        parts: list[str] = []
+        try:
+            for delta in self.llm_service.stream_chat(messages):
+                if not delta:
+                    continue
+                parts.append(delta)
+                if on_token is not None:
+                    on_token(delta)
+        except Exception:
+            fallback_answer = self.compose(
+                query=query,
+                query_result=query_result,
+                product_candidates=products,
+                citations=citation_list,
+            )
+            for delta in _chunk_text(fallback_answer):
+                if on_token is not None:
+                    on_token(delta)
+            return fallback_answer
+
+        content = "".join(parts).strip()
         if not content:
             return _safe_fallback_answer()
 
@@ -227,6 +276,26 @@ def _build_user_prompt(
     return "\n".join(sections)
 
 
+def _build_messages(
+    query: str,
+    query_result: QueryUnderstandingResult,
+    product_candidates: list[ProductCandidate],
+    citations: list[Citation],
+) -> list[LLMMessage]:
+    return [
+        LLMMessage(role="system", content=_build_system_prompt()),
+        LLMMessage(
+            role="user",
+            content=_build_user_prompt(
+                query=query,
+                query_result=query_result,
+                product_candidates=product_candidates,
+                citations=citations,
+            ),
+        ),
+    ]
+
+
 def _format_products(product_candidates: list[ProductCandidate]) -> str:
     if not product_candidates:
         return "- 无候选商品"
@@ -285,3 +354,10 @@ def _truncate_text(text: str | None, limit: int) -> str:
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[:limit].rstrip()}..."
+
+
+def _chunk_text(text: str, chunk_size: int = 18) -> list[str]:
+    return [
+        text[index : index + chunk_size]
+        for index in range(0, len(text), chunk_size)
+    ]

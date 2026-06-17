@@ -35,8 +35,9 @@ Current backend tests cover:
 - Feedback short-term counter aggregation
 - Streaming SSE event formatting
 - Realtime node_start/node_end events with duration_ms
+- Granular product_retrieval and knowledge_retrieval stream nodes
 - Retrieval stream events for product and knowledge recall
-- Token chunk events for streamed answer text
+- Provider-native LLM token streaming with chunked fallback behavior
 - Error-node exposure in `/api/chat/stream`
 
 ## 2. Frontend Build
@@ -113,6 +114,6 @@ Recommended manual checks:
 - Backend tests use SQLite and in-memory/fake cache services; they do not require real MySQL or Redis.
 - MySQL 5.7 compatibility is maintained through SQLAlchemy model choices and documented configuration rather than live MySQL integration tests.
 - The project is not connected to live ecommerce inventory.
-- SSE streams realtime workflow node events, retrieval summaries, token chunks, trace, final result, and done/error events.
+- SSE streams realtime workflow node events, separate retrieval nodes, retrieval summaries, provider-native token chunks, trace, final result, and done/error events.
 - Feedback is stored but does not yet train ranking or retrieval.
 - The system does not perform checkout, payment, orders, or fulfillment.
