@@ -27,6 +27,7 @@ Current backend tests cover:
 - Conversation memory
 - Feedback API
 - Import scripts for categories, products, and documents
+- Real product normalizer, dataset validator, and JSONL import upsert behavior
 - Redis-compatible cache service using in-memory fakes
 - Session recent-turn cache behavior
 - Product and knowledge retrieval cache hit/miss behavior
@@ -76,7 +77,20 @@ python ../scripts/eval_multiturn.py
 
 These checks are lightweight workflow and rule assertions. They are not final business metrics.
 
-## 4. Manual Demo Cases
+## 4. Data Import Evaluation
+
+Stage Data-1 adds tests for:
+
+- phone CSV normalization, brand inference, tag derivation, and data-quality warnings
+- JSONL normalization for schema-like input
+- processed JSONL validation and min-count failures
+- skincare medical-claim banned term detection
+- real-product import dry-run behavior
+- real-product upsert behavior without duplicate products
+
+The tests use tiny local fixtures and SQLite. They do not require large external datasets, MySQL, Redis, crawlers, or API access.
+
+## 5. Manual Demo Cases
 
 Recommended manual checks:
 
@@ -87,7 +101,7 @@ Recommended manual checks:
 5. Skincare boundary: ask for sensitive-skin guidance and confirm there are no medical cure claims.
 6. Feedback submission: submit helpful or not helpful feedback from the Web Debug page.
 
-## 5. Current Limitations
+## 6. Current Limitations
 
 - Seed data is intentionally small.
 - The default local setup uses mock embedding and mock LLM providers.

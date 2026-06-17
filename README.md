@@ -330,6 +330,7 @@ SmartBuyAgent 不是完整电商交易系统，不包含：
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
+- [Data Import](docs/DATA_IMPORT.md)
 - [Evaluation](docs/EVALUATION.md)
 - [Demo Script](docs/DEMO_SCRIPT.md)
 
@@ -633,6 +634,33 @@ cd backend
 python ../scripts/eval_retrieval.py
 python ../scripts/eval_multiturn.py
 ```
+
+## 9.1 Product Dataset Import
+
+Seed data import remains available for tests and lightweight demos. Real product import supports local CSV, JSON, and JSONL files through a normalize -> validate -> import pipeline:
+
+```bash
+python scripts/normalize_real_products.py \
+  --input data/raw/products/phones_cleaned_data.csv \
+  --output data/processed/products/phones_500.jsonl \
+  --category phone \
+  --source-platform kaggle \
+  --limit 500
+
+python scripts/validate_product_dataset.py \
+  --input data/processed/products/phones_500.jsonl \
+  --category phone \
+  --min-count 500
+
+python scripts/import_real_products.py \
+  --input data/processed/products/phones_500.jsonl \
+  --category phone \
+  --upsert
+```
+
+Product images are represented by `image_url` when available; the project does not download or redistribute third-party images. `source_url` is stored as a source reference and is not treated as a purchase entry.
+
+See [docs/DATA_IMPORT.md](docs/DATA_IMPORT.md).
 
 ## 10. Tests and Verification
 

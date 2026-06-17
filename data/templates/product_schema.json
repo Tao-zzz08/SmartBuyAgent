@@ -1,0 +1,32 @@
+{
+  "source_product_id": "phone_000001",
+  "category": "phone",
+  "title": "OnePlus 11 5G",
+  "brand": "OnePlus",
+  "price": 54999,
+  "currency": "INR",
+  "description": "OnePlus 11 5G 搭载 Snapdragon 8 Gen2，12GB RAM，5000mAh 电池，100W 快充。",
+  "image_url": null,
+  "source_url": null,
+  "source_platform": "kaggle",
+  "rating": 4.5,
+  "tags": ["5g", "高刷屏", "长续航", "快充", "拍照", "性能"],
+  "attributes": {
+    "os": "Android v13",
+    "network_type": "5g",
+    "chipset": "Snapdragon 8 Gen2",
+    "ram_gb": 12,
+    "storage_gb": null,
+    "battery_mah": 5000,
+    "fast_charge_w": 100,
+    "screen_size_in": 6.7,
+    "refresh_rate_hz": 120,
+    "rear_camera_max_mp": 50,
+    "front_camera_mp": 16,
+    "nfc": true
+  },
+  "data_quality": {
+    "missing_fields": [],
+    "warnings": []
+  }
+}

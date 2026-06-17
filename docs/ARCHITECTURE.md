@@ -120,6 +120,20 @@ Seed data is imported into SQLite:
 - Mini product CSV data
 - Markdown knowledge documents
 
+Real product datasets can also be imported through the Data-1 pipeline:
+
+```text
+data/raw/products/*.csv|*.json|*.jsonl
+-> normalize_real_products.py
+-> data/processed/products/*.jsonl
+-> validate_product_dataset.py
+-> import_real_products.py
+-> relational database
+-> rebuild_index.py
+```
+
+The processed product schema preserves source IDs, category, title, brand, price, currency, description, image URL, source URL, tags, attributes, and data quality warnings.
+
 Document import splits Markdown files into `document_chunks`. Index rebuild writes product text and knowledge chunks into Chroma collections:
 
 - `product_text`
