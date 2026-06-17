@@ -45,10 +45,38 @@ export type ChatStreamDonePayload = {
 
 export type ChatStreamErrorPayload = {
   message: string;
+  failed_node?: string;
+  error_type?: string;
+  duration_ms?: number;
+};
+
+export type ChatStreamNodePayload = Record<string, unknown> & {
+  request_id?: string;
+  session_id?: string;
+  node?: string;
+  status?: string;
+  duration_ms?: number;
+};
+
+export type ChatStreamRetrievalPayload = Record<string, unknown> & {
+  type?: "product" | "knowledge" | "comparison" | string;
+  status?: string;
+};
+
+export type ChatStreamTokenPayload = {
+  request_id?: string;
+  session_id?: string;
+  node?: string;
+  delta: string;
 };
 
 export type ChatStreamHandlers = {
   onSession?: (payload: { session_id: string }) => void;
+  onNodeStart?: (payload: ChatStreamNodePayload) => void;
+  onNodeProgress?: (payload: ChatStreamNodePayload) => void;
+  onRetrieval?: (payload: ChatStreamRetrievalPayload) => void;
+  onToken?: (payload: ChatStreamTokenPayload) => void;
+  onNodeEnd?: (payload: ChatStreamNodePayload) => void;
   onTrace?: (payload: TraceStep) => void;
   onResult?: (payload: ChatResponse) => void;
   onDone?: (payload: ChatStreamDonePayload) => void;
@@ -176,6 +204,31 @@ function dispatchSseBlock(block: string, handlers: ChatStreamHandlers): void {
 
   if (event === "session") {
     handlers.onSession?.(payload as { session_id: string });
+    return;
+  }
+
+  if (event === "node_start") {
+    handlers.onNodeStart?.(payload as ChatStreamNodePayload);
+    return;
+  }
+
+  if (event === "node_progress") {
+    handlers.onNodeProgress?.(payload as ChatStreamNodePayload);
+    return;
+  }
+
+  if (event === "retrieval") {
+    handlers.onRetrieval?.(payload as ChatStreamRetrievalPayload);
+    return;
+  }
+
+  if (event === "token") {
+    handlers.onToken?.(payload as ChatStreamTokenPayload);
+    return;
+  }
+
+  if (event === "node_end") {
+    handlers.onNodeEnd?.(payload as ChatStreamNodePayload);
     return;
   }
 

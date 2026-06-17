@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agent.stream_runner import AgentStreamRunner
 from app.api.chat import (
     get_chat_chroma_client,
     get_chat_cache_service,
@@ -645,6 +646,10 @@ def test_chat_stream_api_shopping_guide() -> None:
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]
         assert "session" in event_names
+        assert "node_start" in event_names
+        assert "node_end" in event_names
+        assert "retrieval" in event_names
+        assert "token" in event_names
         assert "trace" in event_names
         assert "result" in event_names
         assert "done" in event_names
@@ -652,6 +657,24 @@ def test_chat_stream_api_shopping_guide() -> None:
         assert result["product_cards"]
         assert result["citations"]
         assert result["session_id"]
+        assert any(
+            event["data"].get("node") == "shopping_guide"
+            for event in events
+            if event["event"] == "node_start"
+        )
+        assert any(
+            isinstance(event["data"].get("duration_ms"), int)
+            and event["data"]["duration_ms"] >= 0
+            for event in events
+            if event["event"] == "node_end"
+        )
+        token_text = "".join(
+            event["data"].get("delta", "")
+            for event in events
+            if event["event"] == "token"
+        )
+        assert token_text
+        assert token_text == result["answer"]
         assert _sse_event_data(events, "done")["status"] == "ok"
     finally:
         _cleanup(engine, db_path, chroma_dir)
@@ -916,10 +939,12 @@ def test_chat_stream_api_emits_error_event_when_chat_service_raises(monkeypatch)
     )
     _override_dependencies(TestingSessionLocal, chroma_client)
 
-    def fail_handle_message(self, query, session_id=None, compare_context=None):
+    def fail_stream(self, query, request_id, session_id=None, **kwargs):
+        if False:
+            yield None
         raise RuntimeError("stream workflow failed")
 
-    monkeypatch.setattr(ChatService, "handle_message", fail_handle_message)
+    monkeypatch.setattr(AgentStreamRunner, "stream", fail_stream)
     try:
         client = TestClient(app)
         response = client.post(

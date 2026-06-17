@@ -184,12 +184,15 @@ SSE 调试接口，响应类型为 `text/event-stream`。
 事件：
 
 - `session`：生成或复用的 `session_id`
+- `node_start` / `node_end`：节点开始与结束，包含 `duration_ms`
+- `retrieval`：商品召回、知识检索或候选比较过程摘要
+- `token`：回答文本增量 chunk
 - `trace`：AgentWorkflow trace step
 - `result`：最终聊天结果
 - `done`：流结束
 - `error`：流级别错误
 
-当前实现是先执行完整 AgentWorkflow，再按顺序输出 trace 事件；尚未实现 token 级 LLM streaming。
+当前 `/api/chat/stream` 已支持节点级实时 SSE、检索过程事件、节点耗时和回答 token chunk。最终 `result` 仍然是 `answer`、`product_cards`、`citations`、`trace` 和 `session_id` 的权威结果。
 
 ### `POST /api/feedback`
 
@@ -520,12 +523,15 @@ SSE debug endpoint. Response content type: `text/event-stream`.
 Events:
 
 - `session`: generated or reused `session_id`
+- `node_start` / `node_end`: realtime node start/end events with `duration_ms`
+- `retrieval`: product retrieval, knowledge retrieval, or comparison progress summary
+- `token`: incremental answer text chunks
 - `trace`: AgentWorkflow trace step
 - `result`: final chat response
 - `done`: stream completion
 - `error`: stream-level failure
 
-The current implementation runs the AgentWorkflow first, then emits trace events in order. Token-level LLM streaming is not implemented.
+`/api/chat/stream` now emits realtime node-level SSE events, retrieval progress, node timing, and answer token chunks. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
 
 ### `POST /api/feedback`
 

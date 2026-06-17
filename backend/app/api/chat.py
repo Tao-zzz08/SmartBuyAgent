@@ -1,19 +1,29 @@
 import json
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.agent.context import AgentRuntimeContext
+from app.agent.stream_runner import AgentStreamRunner
 from app.cache.cache_service import CacheService, get_cache_service
 from app.cache.rate_limit import RateLimitExceeded, check_rate_limit
 from app.chat.chat_service import ChatService
 from app.chat.conversation_memory import ConversationMemoryService
+from app.chat.followup_rewriter import FollowUpQueryRewriter
 from app.chat.llm_answer_composer import LLMAnswerComposer
-from app.chat.response_composer import ChatResponse
+from app.chat.product_comparison import ProductComparisonService
+from app.chat.query_understanding import QueryUnderstandingService
+from app.chat.response_composer import ChatResponse, ResponseComposer
 from app.core.config import settings
 from app.core.db import get_db
 from app.retrieval.chroma_indexer import get_chroma_client
+from app.retrieval.retrieval_service import (
+    KnowledgeRetrievalService,
+    ProductRetrievalService,
+)
 from app.schemas.chat import (
     ChatRequest,
     ChatResponseSchema,
@@ -22,6 +32,7 @@ from app.schemas.chat import (
 )
 from app.services.embedding import BaseEmbeddingService, get_embedding_service
 from app.services.llm import BaseLLMService, get_llm_service
+from app.streaming.events import StreamEvent, sse_event
 
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -99,59 +110,99 @@ def chat_stream(
     _enforce_rate_limit(cache_service, session_id)
 
     def event_generator():
-        session_event = {"session_id": session_id, "request_id": request_id}
-        _cache_sse_event(cache_service, session_id, request_id, "session", session_event)
-        yield _sse_event("session", session_event)
+        def emit(stream_event: StreamEvent):
+            _cache_sse_event(
+                cache_service,
+                session_id,
+                request_id,
+                stream_event.event,
+                stream_event.data,
+            )
+            return sse_event(stream_event.event, stream_event.data)
+
+        session_event = StreamEvent(
+            event="session",
+            data={"session_id": session_id, "request_id": request_id},
+        )
+        yield emit(session_event)
 
         try:
-            chat_service = ChatService(
+            context = _stream_runtime_context(
                 db=db,
                 embedding_service=embedding_service,
                 chroma_client=chroma_client,
                 llm_answer_composer=llm_answer_composer,
                 cache_service=cache_service,
             )
-            chat_response = chat_service.handle_message(
-                query=request.query,
+            runner = AgentStreamRunner(context)
+            stream = runner.stream(
+                request.query,
+                request_id=request_id,
                 session_id=request.session_id,
+                event_session_id=session_id,
             )
-            chat_response = _save_conversation_turn(
+
+            try:
+                while True:
+                    stream_event = next(stream)
+                    yield emit(stream_event)
+            except StopIteration as stop:
+                state = stop.value
+
+            chat_response = _chat_response_from_state(state)
+            for stream_event in _save_conversation_turn_stream_events(
                 db=db,
                 session_id=session_id,
                 user_query=request.query,
                 chat_response=chat_response,
                 cache_service=cache_service,
-            )
+                request_id=request_id,
+            ):
+                yield emit(stream_event)
+                if stream_event.event == "trace":
+                    chat_response = ChatResponse(
+                        answer=chat_response.answer,
+                        product_cards=chat_response.product_cards,
+                        citations=chat_response.citations,
+                        trace=[*chat_response.trace, stream_event.data],
+                    )
 
             if request.debug:
-                for trace_step in chat_response.trace:
-                    _cache_sse_event(
-                        cache_service,
-                        session_id,
-                        request_id,
-                        "trace",
-                        trace_step,
-                    )
-                    yield _sse_event("trace", trace_step)
+                # Trace steps are already emitted in realtime; this keeps the
+                # final result schema compatible without replaying duplicates.
+                pass
 
             response_schema = _to_response_schema(
                 chat_response,
                 session_id=session_id,
                 include_trace=request.debug,
             )
-            result_event = response_schema.model_dump()
-            done_event = {"status": "ok"}
-            _cache_sse_event(cache_service, session_id, request_id, "result", result_event)
-            _cache_sse_event(cache_service, session_id, request_id, "done", done_event)
-            yield _sse_event("result", result_event)
-            yield _sse_event("done", done_event)
-        except Exception:
-            error_event = {"message": "chat stream failed"}
-            done_event = {"status": "error"}
-            _cache_sse_event(cache_service, session_id, request_id, "error", error_event)
-            _cache_sse_event(cache_service, session_id, request_id, "done", done_event)
-            yield _sse_event("error", error_event)
-            yield _sse_event("done", done_event)
+            result_event = {
+                **response_schema.model_dump(),
+                "request_id": request_id,
+            }
+            done_event = {
+                "request_id": request_id,
+                "session_id": session_id,
+                "status": "ok",
+            }
+            yield emit(StreamEvent(event="result", data=result_event))
+            yield emit(StreamEvent(event="done", data=done_event))
+        except Exception as exc:
+            error_event = {
+                "request_id": request_id,
+                "session_id": session_id,
+                "failed_node": "agent_stream",
+                "error_type": type(exc).__name__,
+                "message": "chat stream failed",
+            }
+            done_event = {
+                "request_id": request_id,
+                "session_id": session_id,
+                "status": "error",
+            }
+            yield emit(StreamEvent(event="error", data=error_event))
+            yield emit(StreamEvent(event="done", data=done_event))
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -187,6 +238,118 @@ def _save_conversation_turn(
         product_cards=chat_response.product_cards,
         citations=chat_response.citations,
         trace=[*chat_response.trace, trace_step],
+    )
+
+
+def _stream_runtime_context(
+    db: Session,
+    embedding_service: BaseEmbeddingService,
+    chroma_client,
+    llm_answer_composer: LLMAnswerComposer,
+    cache_service: CacheService | None,
+) -> AgentRuntimeContext:
+    return AgentRuntimeContext(
+        db=db,
+        embedding_service=embedding_service,
+        chroma_client=chroma_client,
+        query_understanding_service=QueryUnderstandingService(),
+        product_retrieval_service=ProductRetrievalService(
+            db=db,
+            embedding_service=embedding_service,
+            chroma_client=chroma_client,
+            cache_service=cache_service,
+        ),
+        knowledge_retrieval_service=KnowledgeRetrievalService(
+            db=db,
+            embedding_service=embedding_service,
+            chroma_client=chroma_client,
+            cache_service=cache_service,
+        ),
+        response_composer=ResponseComposer(),
+        llm_answer_composer=llm_answer_composer,
+        conversation_memory_service=ConversationMemoryService(
+            db,
+            cache_service=cache_service,
+        ),
+        followup_rewriter=FollowUpQueryRewriter(),
+        product_comparison_service=ProductComparisonService(db),
+        cache_service=cache_service,
+    )
+
+
+def _chat_response_from_state(state) -> ChatResponse:
+    return ChatResponse(
+        answer=state.answer
+        or "当前导购服务暂时没有生成回答，请稍后再试。",
+        product_cards=list(state.product_cards),
+        citations=list(state.citations),
+        trace=list(state.trace),
+    )
+
+
+def _save_conversation_turn_stream_events(
+    db: Session,
+    session_id: str,
+    user_query: str,
+    chat_response: ChatResponse,
+    cache_service: CacheService | None,
+    request_id: str,
+):
+    started = time.perf_counter()
+    yield StreamEvent(
+        event="node_start",
+        data={
+            "request_id": request_id,
+            "session_id": session_id,
+            "node": "conversation_memory",
+            "label": "会话保存",
+            "status": "running",
+        },
+    )
+
+    saved_response = _save_conversation_turn(
+        db=db,
+        session_id=session_id,
+        user_query=user_query,
+        chat_response=chat_response,
+        cache_service=cache_service,
+    )
+    trace_step = saved_response.trace[-1]
+    duration_ms = max(0, int((time.perf_counter() - started) * 1000))
+    yield StreamEvent(
+        event="trace",
+        data={
+            "request_id": request_id,
+            "session_id": session_id,
+            **trace_step,
+        },
+    )
+    if trace_step.get("status") == "failed":
+        yield StreamEvent(
+            event="error",
+            data={
+                "request_id": request_id,
+                "session_id": session_id,
+                "failed_node": "conversation_memory",
+                "error_type": "MemorySaveFailed",
+                "message": "conversation memory save failed",
+                "duration_ms": duration_ms,
+            },
+        )
+    yield StreamEvent(
+        event="node_end",
+        data={
+            "request_id": request_id,
+            "session_id": session_id,
+            "node": "conversation_memory",
+            "label": "会话保存",
+            "status": trace_step.get("status", "success"),
+            "duration_ms": duration_ms,
+            "summary": {
+                "session_id": session_id,
+                "turn_index": trace_step.get("turn_index"),
+            },
+        },
     )
 
 

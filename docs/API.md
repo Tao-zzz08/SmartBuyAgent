@@ -110,6 +110,18 @@ Events:
 event: session
 data: {"session_id":"..."}
 
+event: node_start
+data: {"node":"product_retrieval","status":"running","started_at":"..."}
+
+event: retrieval
+data: {"type":"product","returned_products":3,"cache_status":"miss"}
+
+event: token
+data: {"node":"response_compose","delta":"根据你的预算，"}
+
+event: node_end
+data: {"node":"product_retrieval","status":"success","duration_ms":83}
+
 event: trace
 data: {"step":"query_understanding","intent":"shopping_guide"}
 
@@ -124,7 +136,7 @@ On stream-level failure:
 
 ```text
 event: error
-data: {"message":"chat stream failed"}
+data: {"failed_node":"knowledge_retrieval","error_type":"RuntimeError","message":"..."}
 
 event: done
 data: {"status":"error"}
@@ -132,8 +144,10 @@ data: {"status":"error"}
 
 Notes:
 
-- Stage 9.1 streaming emits trace after the AgentWorkflow completes.
-- This is trace streaming, not token-level LLM streaming.
+- Stage Stream-1 emits realtime node-level events while the workflow is running.
+- `node_end.duration_ms` reports per-node elapsed time.
+- Retrieval events summarize product recall, knowledge retrieval, or in-session comparison without sending long source text.
+- Token events stream the final answer text in chunks. Product cards and citations still come only from retrieval/comparison services.
 - Memory saving is handled by the API layer and stores the original query.
 - The endpoint can return `429 Too Many Requests` before an SSE stream starts.
 

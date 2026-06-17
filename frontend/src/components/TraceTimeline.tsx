@@ -27,6 +27,10 @@ const STEP_TITLES: Record<string, string> = {
   llm_answer: "LLM \u56de\u7b54",
   conversation_memory: "\u4f1a\u8bdd\u4fdd\u5b58",
   agent_workflow: "Agent \u5de5\u4f5c\u6d41",
+  node_start: "节点开始",
+  node_progress: "节点进度",
+  node_end: "节点完成",
+  retrieval: "检索过程",
   save_trace: "Trace \u8bb0\u5f55",
   clarification: "\u6f84\u6e05\u56de\u7b54",
   chitchat: "\u95f2\u804a\u56de\u7b54",
@@ -140,6 +144,47 @@ function buildSummaryRows(stepName: string, step: TraceStep): SummaryRow[] {
       row("Source turn", step.source_turn_index),
       row("Referenced products", step.referenced_product_ids),
       row("Resolved products", step.resolved_product_ids),
+    ]);
+  }
+
+  if (stepName === "node_start") {
+    return compactRows([
+      row("Node", step.node, true),
+      row("Label", step.label),
+      row("Started at", step.started_at),
+      row("Status", step.status),
+    ]);
+  }
+
+  if (stepName === "node_end") {
+    return compactRows([
+      row("Node", step.node, true),
+      row("Label", step.label),
+      row("Status", step.status),
+      row("Duration", formatDuration(step.duration_ms), true),
+      row("Summary", step.summary),
+    ]);
+  }
+
+  if (stepName === "node_progress") {
+    return compactRows([
+      row("Node", step.node, true),
+      row("Status", step.status),
+      row("Message", step.message),
+    ]);
+  }
+
+  if (stepName === "retrieval") {
+    return compactRows([
+      row("Type", step.type, true),
+      row("Status", step.status),
+      row("Cache", step.cache_status),
+      row("Query", step.query),
+      row("Returned products", step.returned_products),
+      row("Product IDs", step.candidate_product_ids ?? step.returned_product_ids),
+      row("Returned chunks", step.returned_chunks),
+      row("Chunk IDs", step.chunk_ids),
+      row("Missing products", step.missing_product_ids),
     ]);
   }
 
@@ -272,6 +317,13 @@ function joinParts(values: unknown[]): string {
   return values.map(formatValue).filter(Boolean).join(" / ");
 }
 
+function formatDuration(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  return `${String(value)} ms`;
+}
+
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value ? value : fallback;
 }
@@ -293,6 +345,9 @@ function statusKind(status: string): string {
   if (status === "fallback" || status === "insufficient_products") {
     return "warning";
   }
+  if (status === "running") {
+    return "rewritten";
+  }
   if (SUCCESS_STATUSES.has(status)) {
     return "success";
   }
@@ -311,6 +366,9 @@ function formatStepStatus(status: string): string {
   }
   if (status === "rewritten") {
     return "\u5df2\u6539\u5199";
+  }
+  if (status === "running") {
+    return "运行中";
   }
   if (status === "failed" || status === "error") {
     return "\u5931\u8d25";

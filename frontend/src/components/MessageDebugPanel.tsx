@@ -20,7 +20,7 @@ export function MessageDebugPanel({
   error,
 }: MessageDebugPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const trace = response?.trace ?? streamTrace;
+  const trace = streamTrace.length > 0 ? streamTrace : response?.trace ?? [];
   const rawData =
     response ??
     (streamTrace.length > 0 || status !== "done"

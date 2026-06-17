@@ -4,6 +4,8 @@ import {
   sendChatMessage,
   sendChatMessageStream,
   type ChatResponse,
+  type ChatStreamNodePayload,
+  type ChatStreamRetrievalPayload,
   type TraceStep,
 } from "../api/chat";
 import { ChatInputBar } from "./ChatInputBar";
@@ -127,7 +129,7 @@ export function ChatWorkspace() {
     appendMessage(targetSessionId, createUserMessage(query), query);
     appendMessage(
       targetSessionId,
-      createAssistantMessage("Agent 正在执行...", query, {
+      createAssistantMessage("", query, {
         id: assistantMessageId,
         status: "streaming",
         streamTrace: [],
@@ -148,7 +150,49 @@ export function ChatWorkspace() {
           onTrace: (payload) => {
             updateMessage(targetSessionId, assistantMessageId, (message) => ({
               ...message,
-              streamTrace: [...(message.streamTrace ?? []), payload],
+              streamTrace: appendStreamTrace(message.streamTrace, payload),
+            }));
+          },
+          onNodeStart: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                streamEventTrace("node_start", payload),
+              ),
+            }));
+          },
+          onNodeProgress: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                streamEventTrace("node_progress", payload),
+              ),
+            }));
+          },
+          onRetrieval: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                retrievalTrace(payload),
+              ),
+            }));
+          },
+          onToken: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              content: `${message.content}${payload.delta}`,
+            }));
+          },
+          onNodeEnd: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                streamEventTrace("node_end", payload),
+              ),
             }));
           },
           onResult: (payload) => {
@@ -158,7 +202,10 @@ export function ChatWorkspace() {
               content: payload.answer,
               status: "done",
               response: payload,
-              streamTrace: payload.trace ?? message.streamTrace,
+              streamTrace:
+                message.streamTrace && message.streamTrace.length > 0
+                  ? message.streamTrace
+                  : payload.trace,
             }));
           },
           onDone: (payload) => {
@@ -373,4 +420,28 @@ function formatError(error: unknown, prefix: string): string {
   return error instanceof Error
     ? `${prefix}: ${error.message}`
     : `${prefix}: unknown error`;
+}
+
+function appendStreamTrace(
+  current: TraceStep[] | undefined,
+  next: TraceStep,
+): TraceStep[] {
+  return [...(current ?? []), next];
+}
+
+function streamEventTrace(
+  eventName: string,
+  payload: ChatStreamNodePayload,
+): TraceStep {
+  return {
+    step: eventName,
+    ...payload,
+  };
+}
+
+function retrievalTrace(payload: ChatStreamRetrievalPayload): TraceStep {
+  return {
+    step: "retrieval",
+    ...payload,
+  };
 }

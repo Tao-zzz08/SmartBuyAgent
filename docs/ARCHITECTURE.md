@@ -70,7 +70,7 @@ Main frontend surfaces:
 - Welcome panel: empty-session showcase prompts that fill the input without auto-sending.
 - Assistant message results: answer, product cards, citations, and feedback rendered per assistant reply.
 - Per-answer Debug panel: expandable Agent Timeline, Raw Trace JSON, and Raw Response JSON for the selected reply.
-- SSE stream mode: appends trace events to the active assistant placeholder before the final result arrives.
+- SSE stream mode: appends realtime node, retrieval, token, and trace events to the active assistant placeholder before the final result arrives.
 
 The frontend does not fabricate product cards or citations. It renders the backend response.
 
@@ -165,6 +165,22 @@ Memory currently supports follow-up rewrite and in-session comparison. It is not
 - answer preview
 
 Feedback does not affect current retrieval, ranking, or recommendation behavior. It is collected for later evaluation and quality analysis.
+
+## 8.1 Streaming Architecture
+
+`POST /api/chat` uses the normal ChatService facade and LangGraph AgentWorkflow path.
+
+`POST /api/chat/stream` uses a realtime AgentStreamRunner that reuses the executable agent nodes and emits SSE events as nodes run:
+
+- `node_start` before a node executes
+- `retrieval` when product recall, knowledge retrieval, or product comparison completes
+- `token` chunks for the final answer text
+- `trace` for backwards-compatible debug trace steps
+- `node_end` with `duration_ms`
+- `error` when a node fails
+- `result` as the final source of truth for answer, product cards, citations, trace, and session ID
+
+Product cards remain sourced from ProductRetrievalService or ProductComparisonService. Citations remain sourced from KnowledgeRetrievalService. LLM output only affects the answer text and does not decide candidates or citations.
 
 ## 9. Safety and Boundaries
 
