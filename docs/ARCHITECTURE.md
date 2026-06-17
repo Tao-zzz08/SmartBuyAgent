@@ -9,7 +9,7 @@ The system has four main layers:
 - Data layer: SQLite tables, Markdown knowledge documents, and Chroma indexes.
 - Service layer: query understanding, retrieval, response composition, LLM answer composition, memory, and feedback.
 - Agent layer: LangGraph AgentWorkflow and executable agent nodes.
-- Frontend layer: Web Showcase, Web Debug, Agent Timeline, SSE streaming, and feedback UI.
+- Frontend layer: Chat Workspace, in-memory session sidebar, per-answer Agent Timeline, SSE streaming, and feedback UI.
 
 ## 2. Backend Layers
 
@@ -37,10 +37,11 @@ The frontend is built with React, TypeScript, and Vite.
 
 Main frontend surfaces:
 
-- Showcase page: product-style landing page and demo entry point.
-- Debug workbench: normal request mode, SSE stream mode, conversation panel, cards, citations, trace, and raw JSON.
-- Agent Timeline: readable view of workflow trace steps.
-- Feedback Panel: helpful / not helpful answer feedback.
+- Chat Workspace: ChatGPT-style primary interface with an in-memory session sidebar, active conversation stream, and sticky input bar.
+- Welcome panel: empty-session showcase prompts that fill the input without auto-sending.
+- Assistant message results: answer, product cards, citations, and feedback rendered per assistant reply.
+- Per-answer Debug panel: expandable Agent Timeline, Raw Trace JSON, and Raw Response JSON for the selected reply.
+- SSE stream mode: appends trace events to the active assistant placeholder before the final result arrives.
 
 The frontend does not fabricate product cards or citations. It renders the backend response.
 

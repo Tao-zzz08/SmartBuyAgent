@@ -11,14 +11,17 @@ export function TracePanel({ trace }: TracePanelProps) {
       {trace.length > 0 ? (
         <div className="trace-list">
           {trace.map((step, index) => (
-            <article className="trace-item" key={`${String(step.step ?? "step")}-${index}`}>
+            <article
+              className="trace-item"
+              key={`${String(step.step ?? "step")}-${index}`}
+            >
               <p className="trace-summary">{formatTraceSummary(step)}</p>
               <pre>{JSON.stringify(step, null, 2)}</pre>
             </article>
           ))}
         </div>
       ) : (
-        <p className="muted">暂无 trace</p>
+        <p className="muted">No trace yet</p>
       )}
     </section>
   );
@@ -34,22 +37,30 @@ function formatTraceSummary(step: TraceStep): string {
     const preferences = Array.isArray(step.preferences)
       ? step.preferences.join(", ")
       : "-";
-    return `query_understanding：intent=${intent}，category=${category}，budget_max=${budgetMax ?? "-"}，preferences=${preferences || "-"}`;
+    return `query_understanding: intent=${intent}, category=${category}, budget_max=${budgetMax ?? "-"}, preferences=${preferences || "-"}`;
+  }
+
+  if (stepName === "follow_up_rewrite") {
+    return `follow_up_rewrite: ${getString(step.status, "-")} -> ${getString(step.rewritten_query, "no rewrite")}`;
   }
 
   if (stepName === "product_retrieval") {
-    return `product_retrieval：召回 ${getNumber(step.candidate_count) ?? 0} 个商品`;
+    return `product_retrieval: ${getNumber(step.candidate_count) ?? 0} product candidate(s)`;
   }
 
   if (stepName === "knowledge_retrieval") {
-    return `knowledge_retrieval：召回 ${getNumber(step.citation_count) ?? 0} 条 citation`;
+    return `knowledge_retrieval: ${getNumber(step.citation_count) ?? 0} citation(s)`;
   }
 
-  if (stepName === "response_composer") {
-    return `response_composer：生成 ${getNumber(step.product_count) ?? 0} 个商品卡片，使用 ${getNumber(step.citation_count) ?? 0} 条 citation`;
+  if (stepName === "product_comparison") {
+    return `product_comparison: ${getString(step.status, "-")}`;
   }
 
-  return `${stepName}：查看原始 JSON`;
+  if (stepName === "response_composer" || stepName === "response_compose") {
+    return `response_compose: ${getNumber(step.product_count ?? step.product_card_count) ?? 0} product card(s), ${getNumber(step.citation_count) ?? 0} citation(s)`;
+  }
+
+  return `${stepName}: view raw JSON`;
 }
 
 function getString(value: unknown, fallback: string): string {

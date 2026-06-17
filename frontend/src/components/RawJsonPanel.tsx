@@ -1,13 +1,14 @@
 type RawJsonPanelProps = {
   data: unknown;
+  title?: string;
 };
 
-export function RawJsonPanel({ data }: RawJsonPanelProps) {
+export function RawJsonPanel({ data, title = "Raw JSON" }: RawJsonPanelProps) {
   return (
     <section className="panel">
-      <h2>Raw JSON</h2>
+      <h2>{title}</h2>
       <pre className="raw-json">
-        {data ? JSON.stringify(data, null, 2) : "暂无响应"}
+        {data ? JSON.stringify(data, null, 2) : "No response yet"}
       </pre>
     </section>
   );

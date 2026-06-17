@@ -45,7 +45,7 @@ This validates:
 - Chat API client
 - SSE client
 - Feedback API client
-- Debug and Showcase page composition
+- Chat Workspace composition
 
 ## 3. Retrieval and Multiturn Evaluation
 

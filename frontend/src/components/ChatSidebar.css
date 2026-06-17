@@ -1,0 +1,103 @@
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  width: 280px;
+  height: 100vh;
+  border-right: 1px solid #d8dee9;
+  background: #111827;
+  color: #f8fafc;
+  padding: 18px;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.sidebar-brand h1 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.sidebar-brand p {
+  margin: 3px 0 0;
+  color: #aeb8ca;
+  font-size: 12px;
+}
+
+.new-session-button {
+  width: 100%;
+  border: 1px solid #334155;
+  background: #1f2937;
+  color: #ffffff;
+  text-align: left;
+  margin-bottom: 16px;
+}
+
+.new-session-button:hover {
+  background: #263244;
+}
+
+.session-list {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.session-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e5e7eb;
+  text-align: left;
+  padding: 11px 12px;
+}
+
+.session-item:hover,
+.session-item.active {
+  border-color: #334155;
+  background: #1f2937;
+}
+
+.session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.session-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+@media (max-width: 860px) {
+  .chat-sidebar {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    max-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid #d8dee9;
+  }
+}

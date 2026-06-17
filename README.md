@@ -39,8 +39,8 @@ SmartBuyAgent 是智能导购、推荐解释和商品知识问答系统，不是
 - 规则版追问改写：支持预算变化、模糊指代和序号引用。
 - 候选商品内比较：只比较上一轮候选商品，不全库乱比。
 - LangGraph AgentWorkflow：编排上下文读取、追问改写、意图路由、商品召回、知识检索、候选比较和回答生成。
-- SSE Web Debug：输出 `session`、`trace`、`result`、`done`、`error` 事件。
-- 前端 Web Showcase、Web Debug、Agent Timeline、Raw JSON Debug 和 Feedback Panel。
+- SSE 调试流：输出 `session`、`trace`、`result`、`done`、`error` 事件。
+- 前端 Chat Workspace：左侧内存会话栏、中间聊天流、底部输入框、每条回答独立展开 Debug。
 - Feedback Loop：支持 `helpful` / `not_helpful` 反馈收集。
 
 ## 3. 技术架构
@@ -62,8 +62,8 @@ SmartBuyAgent 是智能导购、推荐解释和商品知识问答系统，不是
 - TypeScript
 - Vite
 - Fetch + ReadableStream SSE
-- Web Showcase
-- Web Debug
+- Chat-style workspace
+- In-memory session sidebar
 - Agent Timeline
 - Feedback Panel
 
@@ -130,26 +130,16 @@ flowchart TD
 
 ## 6. 前端页面
 
-Web Showcase：
+当前前端是接近 ChatGPT 的 Chat Workspace：
 
-- 项目定位
-- 手机、鞋靴、护肤三类场景
-- 示例问题
-- 核心能力卡片
-- 进入 Web Debug
-
-Web Debug：
-
-- 普通 `Send request`
-- SSE `Stream send`
-- `session_id` 展示和新会话重置
-- Conversation
-- Product Cards
-- Citations
-- Agent Timeline
-- Raw Trace JSON
-- Raw Response JSON
-- Feedback Panel
+- 左侧内存版会话历史，不依赖后端 session list API。
+- 中间是当前会话的聊天消息流。
+- 底部固定输入框，支持 Enter 发送、Shift + Enter 换行。
+- 空会话展示欢迎页和示例问题，示例问题只填入输入框，不自动发送。
+- 支持普通 `Send` 和 SSE `Stream` 两种请求方式。
+- 每条 assistant 回复独立展示 answer、product cards、citations 和 feedback。
+- 每条 assistant 回复都有“查看 Debug”按钮，可展开该条回复自己的 Agent Timeline、Raw Trace JSON 和 Raw Response JSON。
+- 切换前端会话不会混用 backend `session_id`。
 
 ## 7. API
 
@@ -382,8 +372,8 @@ The runtime `/api/chat` path is routed through a LangGraph-based `AgentWorkflow`
 - Rule-based follow-up rewrite for budget changes, vague references, and ordinal references.
 - In-session product comparison restricted to previous candidate product IDs.
 - LangGraph AgentWorkflow orchestration for context loading, rewrite, routing, retrieval, comparison, and response composition.
-- SSE Web Debug stream for session, trace, result, done, and error events.
-- Frontend Web Showcase, Web Debug workspace, Agent Timeline, raw JSON debug view, and Feedback Panel.
+- SSE debug stream for session, trace, result, done, and error events.
+- Frontend Chat Workspace with an in-memory session sidebar, chat message stream, bottom input bar, and per-answer expandable Debug panels.
 - Feedback loop with `helpful` / `not_helpful` ratings for future evaluation.
 
 ## 3. Technical Architecture
@@ -405,8 +395,8 @@ Frontend:
 - TypeScript
 - Vite
 - Fetch plus ReadableStream SSE handling
-- Web Showcase page
-- Web Debug workspace
+- Chat-style workspace
+- In-memory session sidebar
 - Agent Timeline
 - Feedback Panel
 
@@ -473,26 +463,16 @@ flowchart TD
 
 ## 6. Frontend Pages
 
-Web Showcase:
+The current frontend is a ChatGPT-style Chat Workspace:
 
-- Project positioning
-- Phone, shoes, and skincare scenario cards
-- Example prompts
-- Core capability cards
-- Entry point into Web Debug
-
-Web Debug:
-
-- Normal `Send request`
-- `Stream send` through SSE
-- Session ID display and new-session reset
-- Conversation history
-- Product cards
-- Citations
-- Agent Timeline
-- Raw trace JSON
-- Raw response JSON
-- Feedback Panel
+- In-memory session sidebar; no backend session list API is required.
+- Chat message stream for the active session.
+- Sticky bottom input bar with Enter to send and Shift + Enter for a new line.
+- Empty conversations show a welcome panel with showcase prompts; clicking a prompt only fills the input.
+- Both normal `Send` and SSE `Stream` requests are supported.
+- Each assistant reply independently renders its answer, product cards, citations, and feedback.
+- Each assistant reply has a `查看 Debug` toggle that expands that reply's own Agent Timeline, Raw Trace JSON, and Raw Response JSON.
+- Switching frontend sessions keeps backend `session_id` values isolated per local session.
 
 ## 7. API
 

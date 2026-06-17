@@ -13,15 +13,15 @@ export function CitationList({ citations }: CitationListProps) {
           {citations.map((citation) => (
             <article className="citation-item" key={citation.chunk_id}>
               <h3>{citation.title ?? citation.chunk_id}</h3>
-              <p className="muted">{citation.section ?? "未命名章节"}</p>
-              <p className="muted">{citation.source_file ?? "未知来源"}</p>
+              <p className="muted">{citation.section ?? "Unnamed section"}</p>
+              <p className="muted">{citation.source_file ?? "Unknown source"}</p>
               <p>{citation.content_preview}</p>
               <p className="score">score: {citation.score.toFixed(4)}</p>
             </article>
           ))}
         </div>
       ) : (
-        <p className="muted">暂无 citation</p>
+        <p className="muted">No citations</p>
       )}
     </section>
   );

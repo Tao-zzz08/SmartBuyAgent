@@ -16,7 +16,7 @@ export function ProductCardList({ productCards }: ProductCardListProps) {
                 <h3>{card.title}</h3>
                 <span className="price">¥{card.price}</span>
               </div>
-              <p className="muted">{card.brand ?? "未知品牌"}</p>
+              <p className="muted">{card.brand ?? "Unknown brand"}</p>
               <p>{card.recommend_reason}</p>
 
               <div className="tag-list">
@@ -52,7 +52,7 @@ export function ProductCardList({ productCards }: ProductCardListProps) {
           ))}
         </div>
       ) : (
-        <p className="muted">暂无商品卡片</p>
+        <p className="muted">No product cards</p>
       )}
     </section>
   );

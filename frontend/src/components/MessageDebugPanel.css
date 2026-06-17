@@ -1,0 +1,26 @@
+.message-debug {
+  margin-top: 14px;
+}
+
+.debug-toggle {
+  border: 1px solid #c9d2e3;
+  background: #ffffff;
+  color: #1849a9;
+}
+
+.debug-toggle:hover {
+  background: #eef4ff;
+}
+
+.debug-content {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  border-left: 3px solid #2563eb;
+  padding-left: 12px;
+}
+
+.debug-content .panel {
+  margin-bottom: 0;
+  background: #f8fafc;
+}
