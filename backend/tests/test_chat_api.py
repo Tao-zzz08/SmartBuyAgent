@@ -436,7 +436,7 @@ def test_chat_api_rewrites_budget_follow_up_and_saves_original_query() -> None:
 
         assert second_response.status_code == 200
         assert rewrite_trace["status"] == "rewritten"
-        assert rewrite_trace["reason"] == "budget_update"
+        assert rewrite_trace["reason"] == "budget_update_follow_up"
         assert "4000" in rewrite_trace["rewritten_query"]
         assert "手机" in rewrite_trace["rewritten_query"]
         assert "拍照" in rewrite_trace["rewritten_query"]
@@ -705,6 +705,67 @@ def test_chat_stream_api_shopping_guide() -> None:
         _cleanup(engine, db_path, chroma_dir)
 
 
+def test_chat_api_three_turn_abbreviated_budget_follow_up() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_api_three_turn_budget_test.db",
+        "chroma_chat_api_three_turn_budget_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={"query": "预算3000，推荐一款拍照好的手机"},
+        )
+        session_id = first_response.json()["session_id"]
+        second_response = client.post(
+            "/api/chat",
+            json={
+                "query": "我的预算增加到4000呢",
+                "session_id": session_id,
+            },
+        )
+        third_response = client.post(
+            "/api/chat",
+            json={
+                "query": "增加到5000呢",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        payload = third_response.json()
+        rewrite_trace = _trace_step(payload, "follow_up_rewrite")
+        query_trace = _trace_step(payload, "query_understanding")
+
+        assert first_response.status_code == 200
+        assert second_response.status_code == 200
+        assert third_response.status_code == 200
+        assert "你好，我可以帮你挑选手机" not in payload["answer"]
+        assert rewrite_trace["status"] == "rewritten"
+        assert rewrite_trace["reason"] == "budget_update_follow_up"
+        assert rewrite_trace["budget"]["max"] == 5000
+        assert rewrite_trace["preferences"] == ["拍照"]
+        assert "预算5000元以内" in rewrite_trace["rewritten_query"]
+        assert "拍照" in rewrite_trace["rewritten_query"]
+        assert "手机" in rewrite_trace["rewritten_query"]
+        assert query_trace["category"] == "phone"
+        assert query_trace["budget"]["max"] == 5000
+        assert query_trace["preferences"] == ["拍照"]
+
+        db = TestingSessionLocal()
+        try:
+            turns = db.scalars(
+                select(ChatTurn)
+                .where(ChatTurn.session_id == session_id)
+                .order_by(ChatTurn.turn_index)
+            ).all()
+            assert turns[-1].user_query == "增加到5000呢"
+        finally:
+            db.close()
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
 def test_chat_api_rate_limit_returns_429(monkeypatch) -> None:
     engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
         "smartbuy_chat_api_rate_limit_test.db",
@@ -880,6 +941,46 @@ def test_chat_stream_api_follow_up_budget_rewrite() -> None:
         assert "4000" in rewrite_trace["rewritten_query"]
         assert "\u624b\u673a" in rewrite_trace["rewritten_query"]
         assert "\u62cd\u7167" in rewrite_trace["rewritten_query"]
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_api_abbreviated_budget_follow_up_matches_chat_memory() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_abbrev_budget_test.db",
+        "chroma_chat_stream_abbrev_budget_test",
+    )
+    _override_dependencies(TestingSessionLocal, chroma_client)
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/chat",
+            json={"query": "预算3000，推荐一款拍照好的手机"},
+        )
+        session_id = first_response.json()["session_id"]
+        stream_response = client.post(
+            "/api/chat/stream",
+            json={
+                "query": "增加到5000呢",
+                "session_id": session_id,
+                "debug": True,
+            },
+        )
+        events = _sse_events(stream_response.text)
+        result = _sse_event_data(events, "result")
+        rewrite_trace = _trace_step(result, "follow_up_rewrite")
+        query_trace = _trace_step(result, "query_understanding")
+
+        assert first_response.status_code == 200
+        assert stream_response.status_code == 200
+        assert rewrite_trace["status"] == "rewritten"
+        assert rewrite_trace["reason"] == "budget_update_follow_up"
+        assert "预算5000元以内" in rewrite_trace["rewritten_query"]
+        assert "拍照" in rewrite_trace["rewritten_query"]
+        assert "手机" in rewrite_trace["rewritten_query"]
+        assert query_trace["category"] == "phone"
+        assert query_trace["budget"]["max"] == 5000
+        assert query_trace["preferences"] == ["拍照"]
     finally:
         _cleanup(engine, db_path, chroma_dir)
 

@@ -3,6 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
+from app.chat.shopping_memory import (
+    Budget,
+    ShoppingMemory,
+    build_effective_query,
+    category_from_id_or_path,
+    category_to_id,
+    category_to_path,
+    extract_category,
+    extract_memory_from_query,
+    parse_budget_max,
+)
+
 
 @dataclass(frozen=True)
 class QueryUnderstandingResult:
@@ -15,6 +27,14 @@ class QueryUnderstandingResult:
     preferences: list[str]
     need_clarification: bool
     clarification_question: str | None
+    category: str | None = None
+    negative_preferences: list[str] = field(default_factory=list)
+    shopping_memory: dict | None = None
+    effective_query: str | None = None
+    is_follow_up: bool = False
+    source: str = "rule"
+    confidence: float = 0.8
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -132,9 +152,28 @@ class QueryUnderstandingService:
         if not normalized_query:
             return self._clarification_result(raw_query)
 
-        category = self._detect_category(lower_query)
+        memory = extract_memory_from_query(normalized_query)
+        category_value = memory.category
+        category = (
+            CategoryRule(
+                category_id=category_to_id(category_value) or "",
+                category_path=category_to_path(category_value) or "",
+                keywords=[],
+            )
+            if category_value
+            else self._detect_category(lower_query)
+        )
+        if category is not None and category_value is None:
+            category_value = category_from_id_or_path(
+                category.category_id,
+                category.category_path,
+            )
         budget_min, budget_max = self._parse_budget(lower_query)
+        if budget_max is None:
+            budget_max = memory.budget.max
         preferences = self._extract_preferences(lower_query)
+        if memory.preferences:
+            preferences = memory.preferences
         intent = self._detect_intent(
             normalized_query=normalized_query,
             lower_query=lower_query,
@@ -154,6 +193,27 @@ class QueryUnderstandingService:
             clarification_question=self.CLARIFICATION_QUESTION
             if need_clarification
             else None,
+            category=category_value,
+            negative_preferences=memory.negative_preferences,
+            shopping_memory=ShoppingMemory(
+                category=category_value,
+                budget=Budget(min=budget_min, max=budget_max),
+                preferences=preferences,
+                negative_preferences=memory.negative_preferences,
+                last_intent=intent,
+            ).to_dict(),
+            effective_query=build_effective_query(
+                ShoppingMemory(
+                    category=category_value,
+                    budget=Budget(min=budget_min, max=budget_max),
+                    preferences=preferences,
+                    negative_preferences=memory.negative_preferences,
+                    last_intent=intent,
+                )
+            )
+            if intent == "shopping_guide" and category_value
+            else raw_query,
+            reason="direct_rule",
         )
 
     def _clarification_result(self, raw_query: str) -> QueryUnderstandingResult:
@@ -167,6 +227,8 @@ class QueryUnderstandingService:
             preferences=[],
             need_clarification=True,
             clarification_question=self.CLARIFICATION_QUESTION,
+            effective_query=raw_query,
+            reason="empty_query",
         )
 
     def _detect_category(self, lower_query: str) -> CategoryRule | None:
@@ -230,7 +292,7 @@ class QueryUnderstandingService:
             if match:
                 return None, self._parse_amount(match.group("value"), match.group("unit"))
 
-        return None, None
+        return None, parse_budget_max(lower_query)
 
     @staticmethod
     def _parse_amount(value: str, unit: str | None) -> int:

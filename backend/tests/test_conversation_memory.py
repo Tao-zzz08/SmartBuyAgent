@@ -123,6 +123,43 @@ def test_save_turn_persists_chat_response_summary() -> None:
         db_path.unlink(missing_ok=True)
 
 
+def test_save_turn_persists_structured_shopping_memory_payload() -> None:
+    engine, db, db_path = _create_test_db(
+        "smartbuy_conversation_structured_memory_test.db"
+    )
+    try:
+        memory = ConversationMemoryService(db)
+        response = _chat_response()
+        response.trace[0]["preferences"] = ["拍照", "续航"]
+        response.trace[0]["negative_preferences"] = ["苹果"]
+        response.trace[0]["shopping_memory"] = {
+            "category": "phone",
+            "budget": {"min": None, "max": 5000, "currency": "CNY"},
+            "preferences": ["拍照", "续航"],
+            "negative_preferences": ["苹果"],
+            "last_product_ids": ["phone_001"],
+            "last_intent": "shopping_guide",
+        }
+
+        turn = memory.save_turn(
+            session_id="session_test",
+            user_query="更看重续航，不考虑苹果",
+            chat_response=response,
+        )
+
+        saved_turn = db.get(ChatTurn, turn.id)
+        assert saved_turn is not None
+        payload = json.loads(saved_turn.preferences_json)
+        assert payload["positive"] == ["拍照", "续航"]
+        assert payload["negative"] == ["苹果"]
+        assert payload["shopping_memory"]["category"] == "phone"
+        assert payload["shopping_memory"]["budget"]["max"] == 5000
+    finally:
+        db.close()
+        engine.dispose()
+        db_path.unlink(missing_ok=True)
+
+
 def test_get_recent_turns_returns_latest_turns() -> None:
     engine, db, db_path = _create_test_db("smartbuy_conversation_recent_test.db")
     try:

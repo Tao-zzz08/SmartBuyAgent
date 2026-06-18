@@ -105,3 +105,20 @@ def test_empty_query_needs_clarification() -> None:
 
     assert result.intent == "clarification"
     assert result.need_clarification is True
+
+
+def test_skincare_query_sanitizes_medical_claims_in_effective_query() -> None:
+    service = QueryUnderstandingService()
+
+    result = service.understand("预算300，推荐能治疗痘痘的护肤品")
+
+    assert result.intent == "shopping_guide"
+    assert result.category_id == "cat_skincare"
+    assert result.category == "skincare"
+    assert result.budget_max == 300
+    assert {"清爽", "控油", "温和"} <= set(result.preferences)
+    assert result.effective_query is not None
+    assert "治疗" not in result.effective_query
+    assert "治愈" not in result.effective_query
+    assert "药效" not in result.effective_query
+    assert "处方" not in result.effective_query

@@ -85,9 +85,7 @@ class ConversationMemoryService:
                 category_path=_str_or_none(query_trace.get("category_path")),
                 budget_min=_int_or_none(query_trace.get("budget_min")),
                 budget_max=_int_or_none(query_trace.get("budget_max")),
-                preferences_json=_json_dumps(
-                    _list_or_empty(query_trace.get("preferences"))
-                ),
+                preferences_json=_json_dumps(_preferences_payload(query_trace)),
                 product_ids_json=_json_dumps(product_ids),
                 citation_chunk_ids_json=_json_dumps(citation_chunk_ids),
             )
@@ -198,6 +196,25 @@ def _json_dumps(value: Any) -> str:
 
 def _list_or_empty(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _preferences_payload(query_trace: dict[str, Any]) -> Any:
+    preferences = _list_or_empty(query_trace.get("preferences"))
+    negative_preferences = _list_or_empty(query_trace.get("negative_preferences"))
+    shopping_memory = query_trace.get("shopping_memory")
+    if isinstance(shopping_memory, dict):
+        return {
+            "positive": preferences,
+            "negative": negative_preferences,
+            "shopping_memory": shopping_memory,
+        }
+    if negative_preferences:
+        return {
+            "positive": preferences,
+            "negative": negative_preferences,
+            "shopping_memory": {},
+        }
+    return preferences
 
 
 def _str_or_none(value: Any) -> str | None:

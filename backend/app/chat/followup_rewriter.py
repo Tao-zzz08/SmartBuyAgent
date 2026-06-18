@@ -6,6 +6,15 @@ import re
 from typing import Any
 
 from app.chat.query_understanding import QueryUnderstandingService
+from app.chat.shopping_memory import (
+    ShoppingMemory,
+    build_effective_query,
+    empty_shopping_memory,
+    extract_memory_from_query,
+    looks_like_budget_follow_up,
+    memory_from_turn,
+    merge_shopping_memory,
+)
 from app.models import ChatTurn
 
 
@@ -33,14 +42,6 @@ VAGUE_REFERENCE_KEYWORDS = [
     "哪个好",
     "有什么区别",
 ]
-BUDGET_FOLLOW_UP_KEYWORDS = ["预算", "以内", "以下", "提高到", "降到", "如果"]
-CATEGORY_FALLBACK_NAMES = {
-    "cat_phone": "手机",
-    "cat_shoes": "鞋靴",
-    "cat_skincare": "护肤品",
-}
-
-
 @dataclass(frozen=True)
 class FollowUpRewriteResult:
     is_follow_up: bool
@@ -48,6 +49,7 @@ class FollowUpRewriteResult:
     reason: str | None = None
     source_turn_index: int | None = None
     context_used: dict[str, Any] = field(default_factory=dict)
+    shopping_memory: dict[str, Any] | None = None
 
 
 class FollowUpQueryRewriter:
@@ -84,34 +86,51 @@ class FollowUpQueryRewriter:
 
         stripped_query = query.strip()
         parsed_query = self.query_understanding_service.understand(stripped_query)
+        previous_memory = _memory_from_turns(turns)
+        current_memory = extract_memory_from_query(
+            stripped_query,
+            intent=parsed_query.intent,
+        )
+        merged_memory = merge_shopping_memory(previous_memory, current_memory)
         product_ids = _json_list(source_turn.product_ids_json)
         preferences = _merge_preferences(
-            _json_list(source_turn.preferences_json),
+            previous_memory.preferences,
             parsed_query.preferences,
         )
-        category_name = _category_name(source_turn.category_id, source_turn.category_path)
         resolved_product_ids = _resolve_ordinal_product_ids(stripped_query, product_ids)
-        budget_max = _parse_budget_max(stripped_query, parsed_query.budget_max)
+        budget_max = merged_memory.budget.max
 
-        if budget_max is not None and _looks_like_budget_follow_up(stripped_query):
-            rewritten_query = _build_budget_rewrite(
-                budget_max=budget_max,
-                preferences=preferences,
-                category_name=category_name,
+        if current_memory.category and previous_memory.has_shopping_context():
+            return _shopping_memory_result(
+                query=stripped_query,
+                reason="category_switch_follow_up"
+                if previous_memory.category != current_memory.category
+                else "category_follow_up",
+                source_turn=source_turn,
+                product_ids=product_ids,
+                memory=merged_memory,
             )
+
+        if looks_like_budget_follow_up(stripped_query, previous_memory):
+            rewritten_query = build_effective_query(merged_memory)
             return FollowUpRewriteResult(
                 is_follow_up=True,
                 rewritten_query=rewritten_query,
-                reason="budget_update",
+                reason="budget_update_follow_up",
                 source_turn_index=source_turn.turn_index,
                 context_used={
                     "referenced_product_ids": product_ids,
                     "resolved_product_ids": [],
+                    "category": merged_memory.category,
                     "category_id": source_turn.category_id,
                     "category_path": source_turn.category_path,
                     "budget_max": budget_max,
-                    "preferences": preferences,
+                    "budget": merged_memory.budget.__dict__,
+                    "preferences": merged_memory.preferences,
+                    "negative_preferences": merged_memory.negative_preferences,
+                    "shopping_memory": merged_memory.to_dict(),
                 },
+                shopping_memory=merged_memory.to_dict(),
             )
 
         if resolved_product_ids:
@@ -129,7 +148,9 @@ class FollowUpQueryRewriter:
                     "referenced_product_ids": product_ids,
                     "resolved_product_ids": resolved_product_ids,
                     "preferences": preferences,
+                    "shopping_memory": previous_memory.to_dict(),
                 },
+                shopping_memory=previous_memory.to_dict(),
             )
 
         if product_ids and _looks_like_vague_product_follow_up(stripped_query):
@@ -146,7 +167,20 @@ class FollowUpQueryRewriter:
                     "referenced_product_ids": product_ids,
                     "resolved_product_ids": [],
                     "preferences": preferences,
+                    "shopping_memory": previous_memory.to_dict(),
                 },
+                shopping_memory=previous_memory.to_dict(),
+            )
+
+        if (
+            current_memory.preferences or current_memory.negative_preferences
+        ) and previous_memory.has_shopping_context():
+            return _shopping_memory_result(
+                query=stripped_query,
+                reason="preference_update_follow_up",
+                source_turn=source_turn,
+                product_ids=product_ids,
+                memory=merged_memory,
             )
 
         return FollowUpRewriteResult(
@@ -163,6 +197,46 @@ def _latest_context_turn(turns: list[ChatTurn]) -> ChatTurn | None:
         if turn.category_id or _json_list(turn.product_ids_json):
             return turn
     return turns[-1] if turns else None
+
+
+def _memory_from_turns(turns: list[ChatTurn]) -> ShoppingMemory:
+    memory = empty_shopping_memory()
+    for turn in turns:
+        turn_memory = memory_from_turn(turn)
+        if turn_memory.has_shopping_context():
+            memory = merge_shopping_memory(memory, turn_memory)
+    return memory
+
+
+def _shopping_memory_result(
+    *,
+    query: str,
+    reason: str,
+    source_turn: ChatTurn,
+    product_ids: list[str],
+    memory: ShoppingMemory,
+) -> FollowUpRewriteResult:
+    rewritten_query = build_effective_query(memory)
+    return FollowUpRewriteResult(
+        is_follow_up=True,
+        rewritten_query=rewritten_query,
+        reason=reason,
+        source_turn_index=source_turn.turn_index,
+        context_used={
+            "referenced_product_ids": product_ids,
+            "resolved_product_ids": [],
+            "category": memory.category,
+            "category_id": source_turn.category_id,
+            "category_path": source_turn.category_path,
+            "budget": memory.budget.__dict__,
+            "budget_max": memory.budget.max,
+            "preferences": memory.preferences,
+            "negative_preferences": memory.negative_preferences,
+            "shopping_memory": memory.to_dict(),
+            "original_query": query,
+        },
+        shopping_memory=memory.to_dict(),
+    )
 
 
 def _json_list(text: str | None) -> list[str]:
@@ -187,34 +261,6 @@ def _merge_preferences(previous: list[str], current: list[str]) -> list[str]:
     return merged
 
 
-def _category_name(category_id: str | None, category_path: str | None) -> str:
-    if category_path:
-        return category_path.split("/")[-1]
-    if category_id:
-        return CATEGORY_FALLBACK_NAMES.get(category_id, "商品")
-    return "商品"
-
-
-def _looks_like_budget_follow_up(query: str) -> bool:
-    return any(keyword in query for keyword in BUDGET_FOLLOW_UP_KEYWORDS)
-
-
-def _parse_budget_max(query: str, parsed_budget_max: int | None) -> int | None:
-    if parsed_budget_max is not None:
-        return parsed_budget_max
-    match = re.search(r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>[kK千万]?)", query)
-    if not match:
-        return None
-
-    multiplier = 1
-    unit = match.group("unit")
-    if unit in {"k", "K", "千"}:
-        multiplier = 1000
-    elif unit == "万":
-        multiplier = 10000
-    return int(float(match.group("value")) * multiplier)
-
-
 def _looks_like_vague_product_follow_up(query: str) -> bool:
     return any(keyword in query for keyword in VAGUE_REFERENCE_KEYWORDS)
 
@@ -227,15 +273,6 @@ def _resolve_ordinal_product_ids(query: str, product_ids: list[str]) -> list[str
             if product_id not in resolved:
                 resolved.append(product_id)
     return resolved
-
-
-def _build_budget_rewrite(
-    budget_max: int,
-    preferences: list[str],
-    category_name: str,
-) -> str:
-    preference_text = "、".join(preferences) if preferences else "当前偏好"
-    return f"预算{budget_max}以内，推荐{preference_text}相关的{category_name}"
 
 
 def _build_ordinal_rewrite(

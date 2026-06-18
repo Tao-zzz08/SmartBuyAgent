@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from app.agent.context import AgentRuntimeContext
@@ -12,6 +13,14 @@ from app.chat.query_understanding import (
     QueryUnderstandingService,
 )
 from app.chat.response_composer import ChatResponse, ResponseComposer
+from app.chat.shopping_memory import (
+    Budget,
+    ShoppingMemory,
+    build_effective_query,
+    category_to_id,
+    category_to_path,
+    shopping_memory_from_dict,
+)
 from app.retrieval.retrieval_service import (
     KnowledgeRetrievalService,
     ProductRetrievalService,
@@ -140,6 +149,33 @@ def intent_router_node(
     try:
         service = context.query_understanding_service or QueryUnderstandingService()
         result = service.understand(state.effective_query)
+        memory = _resolved_shopping_memory(state, result)
+        if memory is not None and memory.category:
+            state.effective_query = build_effective_query(memory)
+            result = replace(
+                result,
+                intent="shopping_guide"
+                if result.intent in {"chitchat", "clarification"}
+                else result.intent,
+                category=memory.category,
+                category_id=category_to_id(memory.category),
+                category_path=category_to_path(memory.category),
+                budget_min=memory.budget.min,
+                budget_max=memory.budget.max,
+                preferences=list(memory.preferences),
+                negative_preferences=list(memory.negative_preferences),
+                shopping_memory=memory.to_dict(),
+                effective_query=state.effective_query,
+                is_follow_up=bool(
+                    getattr(state.rewrite_result, "is_follow_up", False)
+                ),
+                reason=getattr(state.rewrite_result, "reason", result.reason),
+                need_clarification=False,
+                clarification_question=None,
+            )
+        elif result.effective_query and result.effective_query != state.effective_query:
+            state.effective_query = result.effective_query
+
         state.query_result = result
         state.intent = result.intent
         state.category_id = result.category_id
@@ -147,17 +183,33 @@ def intent_router_node(
         state.budget_min = result.budget_min
         state.budget_max = result.budget_max
         state.preferences = list(result.preferences)
+        state.negative_preferences = list(getattr(result, "negative_preferences", []))
+        state.shopping_memory = getattr(result, "shopping_memory", None)
         state.need_clarification = result.need_clarification
         state.clarification_question = result.clarification_question
         _append_step(
             state,
             "query_understanding",
+            original_query=state.original_query,
+            effective_query=state.effective_query,
+            is_follow_up=bool(getattr(state.rewrite_result, "is_follow_up", False)),
             intent=result.intent,
+            category=getattr(result, "category", None),
             category_id=result.category_id,
             category_path=result.category_path,
+            budget={
+                "min": result.budget_min,
+                "max": result.budget_max,
+                "currency": "CNY",
+            },
             budget_min=result.budget_min,
             budget_max=result.budget_max,
             preferences=result.preferences,
+            negative_preferences=getattr(result, "negative_preferences", []),
+            source=getattr(result, "source", "rule"),
+            confidence=getattr(result, "confidence", 0.8),
+            reason=getattr(result, "reason", None),
+            shopping_memory=getattr(result, "shopping_memory", None),
             need_clarification=result.need_clarification,
         )
         return state
@@ -413,6 +465,14 @@ def _append_step(state: AgentState, step: str, **extra: Any) -> None:
 
 def _append_follow_up_trace(state: AgentState, status: str, result: Any) -> None:
     context_used = getattr(result, "context_used", {}) or {}
+    shopping_memory = context_used.get("shopping_memory") or getattr(
+        result,
+        "shopping_memory",
+        None,
+    )
+    budget = context_used.get("budget") or (
+        shopping_memory.get("budget") if isinstance(shopping_memory, dict) else None
+    )
     _append_step(
         state,
         "follow_up_rewrite",
@@ -421,8 +481,13 @@ def _append_follow_up_trace(state: AgentState, status: str, result: Any) -> None
         rewritten_query=getattr(result, "rewritten_query", state.effective_query),
         reason=getattr(result, "reason", None),
         source_turn_index=getattr(result, "source_turn_index", None),
+        category=context_used.get("category"),
+        budget=budget,
+        preferences=context_used.get("preferences", []),
+        negative_preferences=context_used.get("negative_preferences", []),
         referenced_product_ids=context_used.get("referenced_product_ids", []),
         resolved_product_ids=context_used.get("resolved_product_ids", []),
+        shopping_memory=shopping_memory,
         context_used=context_used,
     )
 
@@ -447,6 +512,31 @@ def _build_compare_context(result: Any) -> CompareContext | None:
             focus_preferences=list(focus_preferences),
         )
 
+    return None
+
+
+def _resolved_shopping_memory(
+    state: AgentState,
+    result: QueryUnderstandingResult,
+) -> ShoppingMemory | None:
+    rewrite_memory = getattr(state.rewrite_result, "shopping_memory", None)
+    if isinstance(rewrite_memory, dict):
+        return shopping_memory_from_dict(rewrite_memory)
+
+    result_memory = getattr(result, "shopping_memory", None)
+    if isinstance(result_memory, dict):
+        memory = shopping_memory_from_dict(result_memory)
+        if result.intent == "shopping_guide" and memory.category:
+            return memory
+
+    if result.intent == "shopping_guide" and result.category_id:
+        return ShoppingMemory(
+            category=getattr(result, "category", None),
+            budget=Budget(min=result.budget_min, max=result.budget_max),
+            preferences=list(result.preferences),
+            negative_preferences=list(getattr(result, "negative_preferences", [])),
+            last_intent=result.intent,
+        )
     return None
 
 

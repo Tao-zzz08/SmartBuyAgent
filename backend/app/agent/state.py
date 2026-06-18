@@ -15,8 +15,10 @@ class AgentState:
     budget_min: int | None = None
     budget_max: int | None = None
     preferences: list[str] = field(default_factory=list)
+    negative_preferences: list[str] = field(default_factory=list)
     need_clarification: bool = False
     clarification_question: str | None = None
+    shopping_memory: Any | None = None
     product_candidates: list[Any] = field(default_factory=list)
     citations: list[Any] = field(default_factory=list)
     product_cards: list[Any] = field(default_factory=list)
