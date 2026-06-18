@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: float = 30.0
     LLM_MAX_TOKENS: int = 800
     LLM_TEMPERATURE: float = 0.2
+    QUERY_UNDERSTANDING_LLM_ENABLED: bool = True
+    QUERY_UNDERSTANDING_LLM_CONFIDENCE_THRESHOLD: float = 0.75
+    QUERY_UNDERSTANDING_LLM_TIMEOUT_SECONDS: float = 8.0
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

@@ -17,6 +17,7 @@ Current backend tests cover:
 - AgentState and agent nodes
 - LangGraph AgentWorkflow
 - Query understanding
+- QueryUnderstanding 2.0 structured result, shopping-memory merge, and validated LLM JSON-slot fallback
 - Follow-up query rewrite
 - Product retrieval
 - Knowledge retrieval
@@ -41,6 +42,7 @@ Current backend tests cover:
 - Error-node exposure in `/api/chat/stream`
 - StreamSafetyGuard phrase matching with rolling-buffer cross-token detection
 - Guarded `/api/chat/stream` behavior: `stream_guard`, response node failure, safe fallback result, and no unsafe token exposure
+- Query-understanding stream trace consistency, including `llm_fallback_attempted`, `llm_fallback_status`, `source`, `confidence`, and `reason`
 
 ## 2. Frontend Build
 

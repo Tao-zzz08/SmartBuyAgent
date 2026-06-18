@@ -32,7 +32,17 @@ Core backend modules:
 
 `ChatService` is the stable API-facing facade. Runtime chat execution is routed through `AgentWorkflow`.
 
-## 2.1 Database and Cache Infrastructure
+## 2.1 QueryUnderstanding 2.0
+
+Query understanding is rule-first and returns a unified `QueryUnderstandingResult` stored on `AgentState`.
+
+- Step 1 adds structured shopping memory, memory merge, abbreviated budget follow-up handling, category switching, preference updates, and stable `effective_query` generation.
+- Step 2 makes the structured result shared by chat, streaming, retrieval, comparison, and answer composition.
+- Step 3 adds an optional LLM fallback only for low-confidence or ambiguous follow-up queries. The LLM is instructed to output JSON slots only; it cannot answer the user, create product cards, create citations, create purchase links, or decide recommendation candidates.
+
+LLM fallback output is parsed as JSON, validated with Pydantic, sanitized through category/intent/budget/product-id whitelists, stripped of purchase-boundary terms, and filtered for skincare medical claims before it is merged back into the rule result and session shopping memory. If parsing, validation, or the LLM call fails, the system falls back to the rule result or clarification instead of returning HTTP 500.
+
+## 2.2 Database and Cache Infrastructure
 
 MySQL is the primary relational database target for persistent data in deployed or full local environments. The project reads `DATABASE_URL`, for example:
 

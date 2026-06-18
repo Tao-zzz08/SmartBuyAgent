@@ -34,7 +34,7 @@ SmartBuyAgent 是智能导购、推荐解释和商品知识问答系统，不是
 - 多品类导购：手机、鞋靴、护肤。
 - 结构化商品召回：支持品类、预算、库存、动态属性和标签上下文。
 - RAG 知识解释：从 Markdown 知识库 chunk 中检索依据并返回 citations。
-- 规则版 QueryUnderstanding：解析意图、品类、预算和偏好。
+- QueryUnderstanding 2.0：规则优先解析意图、品类、预算和偏好；低置信度或长尾追问时，LLM 只做 JSON 槽位抽取兜底，结果经过校验、白名单和安全过滤后再合并进结构化状态。
 - 会话记忆：支持 `session_id` 和对话轮次持久化。
 - 规则版追问改写：支持预算变化、模糊指代和序号引用。
 - 候选商品内比较：只比较上一轮候选商品，不全库乱比。
@@ -247,6 +247,7 @@ npm run dev
 - `.env.example` 提供非敏感默认配置。
 - 默认 embedding provider 是 `mock`。
 - 默认 LLM provider 是 `mock`。
+- `QUERY_UNDERSTANDING_LLM_ENABLED` 控制结构化 query understanding 的 LLM JSON 槽位兜底；高置信规则命中不会调用 LLM。
 - 不要提交真实 API key。
 
 ## 9. 数据初始化与索引构建
@@ -372,7 +373,7 @@ The runtime `/api/chat` path is routed through a LangGraph-based `AgentWorkflow`
 - Multi-category shopping guide for phones, shoes, and skincare.
 - Structured product retrieval with category, budget, stock, dynamic attribute, and tag context.
 - RAG knowledge explanation with citations from imported Markdown knowledge chunks.
-- Rule-based query understanding for intent, category, budget, and preferences.
+- QueryUnderstanding 2.0: rule-first parsing for intent, category, budget, and preferences; low-confidence or long-tail follow-ups can use an LLM JSON-slot fallback that is validated, whitelisted, safety-filtered, and merged back into structured state.
 - Conversation memory with `session_id` and persisted chat turns.
 - Rule-based follow-up rewrite for budget changes, vague references, and ordinal references.
 - In-session product comparison restricted to previous candidate product IDs.
@@ -589,6 +590,7 @@ Environment configuration:
 - `REDIS_URL` enables optional Redis cache, rate limit, SSE trace state, and feedback counters.
 - Default embedding provider is `mock`.
 - Default LLM provider is `mock`.
+- `QUERY_UNDERSTANDING_LLM_ENABLED` controls the structured query-understanding LLM JSON-slot fallback. High-confidence rule matches do not call the LLM.
 - Do not commit real API keys.
 
 ## 8.1 Infrastructure Configuration

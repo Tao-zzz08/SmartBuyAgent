@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.config import settings
 from app.chat.shopping_memory import (
     Budget as ShoppingBudget,
     ShoppingMemory,
@@ -21,6 +23,7 @@ from app.chat.shopping_memory import (
     parse_budget_max,
     shopping_memory_from_dict,
 )
+from app.services.llm import BaseLLMService, LLMMessage, get_llm_service
 
 
 VALID_INTENTS = {
@@ -31,6 +34,28 @@ VALID_INTENTS = {
     "chitchat",
 }
 VALID_SOURCES = {"rule", "llm", "mixed"}
+VALID_CATEGORIES = {"phone", "shoes", "skincare"}
+LLM_UNDERSTANDING_MARKER = "SMARTBUY_QUERY_UNDERSTANDING_JSON"
+SKINCARE_MEDICAL_TERMS = [
+    "治疗",
+    "治愈",
+    "药效",
+    "处方",
+    "医学修复",
+    "修复疾病",
+    "祛病",
+    "消炎药",
+    "药物",
+]
+PURCHASE_BOUNDARY_TERMS = [
+    "购买",
+    "下单",
+    "支付",
+    "购物车",
+    "订单",
+    "购买链接",
+    "立即购买",
+]
 
 
 class Budget(BaseModel):
@@ -78,6 +103,10 @@ class QueryUnderstandingResult(BaseModel):
     need_clarification: bool = False
     clarification_question: str | None = None
     shopping_memory: dict[str, Any] | None = None
+    llm_fallback_attempted: bool = False
+    llm_fallback_status: str | None = None
+    llm_fallback_error: str | None = None
+    llm_fallback_result: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -201,7 +230,77 @@ class QueryUnderstandingResult(BaseModel):
             "memory_updated": self.memory_updated,
             "shopping_memory": self.shopping_memory,
             "need_clarification": self.need_clarification,
+            "llm_fallback_attempted": self.llm_fallback_attempted,
+            "llm_fallback_status": self.llm_fallback_status,
+            "llm_fallback_error": self.llm_fallback_error,
+            "llm_fallback_result": self.llm_fallback_result,
         }
+
+
+class LLMQueryUnderstandingOutput(BaseModel):
+    is_follow_up: bool = False
+    intent: Literal[
+        "shopping_guide",
+        "product_knowledge",
+        "compare",
+        "clarification",
+        "chitchat",
+    ] = "clarification"
+    category: Literal["phone", "shoes", "skincare"] | None = None
+    budget: Budget = Field(default_factory=Budget)
+    preferences: list[str] = Field(default_factory=list)
+    negative_preferences: list[str] = Field(default_factory=list)
+    compare_product_ids: list[str] = Field(default_factory=list)
+    referenced_product_indices: list[int] = Field(default_factory=list)
+    confidence: float = 0.0
+    reason: str = "unknown"
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_payload(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+
+        intent = str(data.get("intent") or "clarification")
+        data["intent"] = intent if intent in VALID_INTENTS else "clarification"
+
+        category = data.get("category")
+        data["category"] = category if category in VALID_CATEGORIES else None
+
+        budget_value = data.get("budget")
+        if isinstance(budget_value, BaseModel):
+            budget_value = budget_value.model_dump()
+        elif not isinstance(budget_value, dict):
+            budget_value = {
+                "min": data.get("budget_min"),
+                "max": data.get("budget_max"),
+                "currency": "CNY",
+            }
+        data["budget"] = budget_value
+
+        data["preferences"] = _dedupe_short_terms(data.get("preferences"))
+        data["negative_preferences"] = _dedupe_short_terms(
+            data.get("negative_preferences")
+        )
+        data["compare_product_ids"] = _list_of_str(data.get("compare_product_ids"))
+        data["referenced_product_indices"] = _list_of_int(
+            data.get("referenced_product_indices")
+        )
+        data["reason"] = _safe_reason(data.get("reason"))
+        return data
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "LLMQueryUnderstandingOutput":
+        self.confidence = max(0.0, min(1.0, float(self.confidence or 0.0)))
+        self.preferences = _dedupe_short_terms(self.preferences)
+        self.negative_preferences = _dedupe_short_terms(self.negative_preferences)
+        self.preferences = [
+            item for item in self.preferences if item not in self.negative_preferences
+        ]
+        return self
 
 
 @dataclass(frozen=True)
@@ -310,6 +409,25 @@ class QueryUnderstandingService:
     SHOPPING_KEYWORDS = ["推荐", "买", "想要", "适合", "预算", "以内", "以下"]
     CLARIFICATION_KEYWORDS = ["推荐一下", "帮我选一个", "买哪个比较好"]
     CHITCHAT_QUERIES = {"你好", "hi", "hello", "在吗"}
+
+    def __init__(
+        self,
+        llm_service: BaseLLMService | None = None,
+        *,
+        llm_enabled: bool | None = None,
+        llm_confidence_threshold: float | None = None,
+    ) -> None:
+        self.llm_service = llm_service
+        self.llm_enabled = (
+            settings.QUERY_UNDERSTANDING_LLM_ENABLED
+            if llm_enabled is None
+            else llm_enabled
+        )
+        self.llm_confidence_threshold = (
+            settings.QUERY_UNDERSTANDING_LLM_CONFIDENCE_THRESHOLD
+            if llm_confidence_threshold is None
+            else llm_confidence_threshold
+        )
 
     def understand(
         self,
@@ -432,7 +550,7 @@ class QueryUnderstandingService:
             preferences=resolved_memory.preferences,
         )
 
-        return QueryUnderstandingResult(
+        rule_result = QueryUnderstandingResult(
             original_query=raw_query,
             effective_query=effective_query,
             is_follow_up=is_follow_up,
@@ -460,6 +578,12 @@ class QueryUnderstandingService:
             if need_clarification
             else None,
             shopping_memory=resolved_memory.to_dict(),
+        )
+        return self._apply_llm_fallback_if_needed(
+            rule_result=rule_result,
+            query=normalized_query,
+            history=history,
+            previous_memory=previous,
         )
 
     def _clarification_result(self, raw_query: str) -> QueryUnderstandingResult:
@@ -598,6 +722,469 @@ class QueryUnderstandingService:
 
     def _looks_like_clarification(self, lower_query: str) -> bool:
         return self._contains_any(lower_query, self.CLARIFICATION_KEYWORDS)
+
+    def _apply_llm_fallback_if_needed(
+        self,
+        *,
+        rule_result: QueryUnderstandingResult,
+        query: str,
+        history: list[Any] | None,
+        previous_memory: ShoppingMemory | None,
+    ) -> QueryUnderstandingResult:
+        previous = previous_memory or empty_memory_from_result(rule_result)
+        if not should_call_llm_fallback(
+            rule_result=rule_result,
+            query=query,
+            previous_memory=previous,
+            confidence_threshold=self.llm_confidence_threshold,
+            enabled=self.llm_enabled,
+        ):
+            return rule_result.model_copy(
+                update={
+                    "llm_fallback_attempted": False,
+                    "llm_fallback_status": "skipped",
+                }
+            )
+
+        try:
+            llm_output = self._llm_structured_extract(
+                query=query,
+                history=history,
+                previous_memory=previous,
+            )
+        except Exception:
+            return _with_llm_failure(rule_result, "llm_call_failed")
+
+        if llm_output is None:
+            return _with_llm_failure(rule_result, "invalid_json")
+
+        sanitized = sanitize_llm_understanding(
+            llm_output,
+            allowed_product_ids=set(previous.last_product_ids),
+            max_reference_index=len(previous.last_product_ids),
+        )
+        merged = merge_rule_and_llm_understanding(
+            rule_result=rule_result,
+            llm_output=sanitized,
+            previous_memory=previous,
+            confidence_threshold=self.llm_confidence_threshold,
+        )
+        return merged.model_copy(
+            update={
+                "llm_fallback_attempted": True,
+                "llm_fallback_status": "success",
+                "llm_fallback_error": None,
+                "llm_fallback_result": sanitized.model_dump(),
+            }
+        )
+
+    def _llm_structured_extract(
+        self,
+        *,
+        query: str,
+        history: list[Any] | None,
+        previous_memory: ShoppingMemory,
+    ) -> LLMQueryUnderstandingOutput | None:
+        messages = build_llm_understanding_prompt(
+            query=query,
+            history=history,
+            previous_memory=previous_memory,
+        )
+        service = self.llm_service or get_llm_service(
+            timeout_seconds=settings.QUERY_UNDERSTANDING_LLM_TIMEOUT_SECONDS
+        )
+        response = service.chat(
+            messages,
+            max_tokens=400,
+            temperature=0.0,
+        )
+        payload = parse_llm_understanding_json(response.content)
+        if payload is None:
+            return None
+        return LLMQueryUnderstandingOutput.model_validate(payload)
+
+
+def should_call_llm_fallback(
+    *,
+    rule_result: QueryUnderstandingResult,
+    query: str,
+    previous_memory: ShoppingMemory | None,
+    confidence_threshold: float,
+    enabled: bool = True,
+) -> bool:
+    if not enabled:
+        return False
+    normalized = query.strip()
+    if not normalized:
+        return False
+    if rule_result.confidence >= confidence_threshold and rule_result.intent != "clarification":
+        return False
+    if previous_memory is None or not previous_memory.has_shopping_context():
+        return False
+    if _looks_like_ambiguous_follow_up(normalized):
+        return True
+    if _contains_product_reference(normalized):
+        return True
+    if len(normalized) <= 18 and rule_result.confidence < confidence_threshold:
+        return True
+    return rule_result.confidence < confidence_threshold and rule_result.intent in {
+        "chitchat",
+        "clarification",
+        "compare",
+    }
+
+
+def build_llm_understanding_prompt(
+    *,
+    query: str,
+    history: list[Any] | None,
+    previous_memory: ShoppingMemory,
+) -> list[LLMMessage]:
+    payload = {
+        "current_query": query,
+        "recent_turns": _recent_turns_payload(history),
+        "shopping_memory": previous_memory.to_dict(),
+        "last_recommended_products": _last_products_payload(previous_memory),
+        "allowed_categories": ["phone", "shoes", "skincare", None],
+        "allowed_intents": sorted(VALID_INTENTS),
+        "output_schema": {
+            "is_follow_up": "boolean",
+            "intent": sorted(VALID_INTENTS),
+            "category": ["phone", "shoes", "skincare", None],
+            "budget": {"min": None, "max": "int|null", "currency": "CNY"},
+            "preferences": ["short preference words"],
+            "negative_preferences": ["short negative preference words"],
+            "compare_product_ids": ["only ids from last_recommended_products"],
+            "referenced_product_indices": ["positive integers within products"],
+            "confidence": "0..1",
+            "reason": "short debug reason",
+        },
+    }
+    system_prompt = (
+        f"{LLM_UNDERSTANDING_MARKER}\n"
+        "You are SmartBuyAgent Query Understanding. Your only task is to parse "
+        "the current user message into structured JSON slots. Do not answer the "
+        "user. Do not create products, citations, source URLs, purchase links, "
+        "orders, payments, or cart actions. Supported categories are phone, "
+        "shoes, skincare. Supported intents are shopping_guide, "
+        "product_knowledge, compare, clarification, chitchat. Return one JSON "
+        "object only, without markdown. If the user refers to the first or "
+        "second product, use referenced_product_indices. compare_product_ids "
+        "may only use ids provided in last_recommended_products. For skincare, "
+        "do not extract medical claims such as treatment, cure, drug effect, "
+        "prescription, or medical repair as preferences. If uncertain, use "
+        "intent=clarification and low confidence."
+    )
+    return [
+        LLMMessage(role="system", content=system_prompt),
+        LLMMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),
+    ]
+
+
+def parse_llm_understanding_json(raw_text: str) -> dict[str, Any] | None:
+    text = (raw_text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+        text = text.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def sanitize_llm_understanding(
+    output: LLMQueryUnderstandingOutput,
+    *,
+    allowed_product_ids: set[str],
+    max_reference_index: int,
+) -> LLMQueryUnderstandingOutput:
+    category = output.category if output.category in VALID_CATEGORIES else None
+    preferences = _sanitize_preference_terms(
+        output.preferences,
+        category=category,
+    )
+    negative_preferences = _sanitize_preference_terms(
+        output.negative_preferences,
+        category=None,
+    )
+    preferences = [item for item in preferences if item not in negative_preferences]
+    compare_product_ids = [
+        product_id
+        for product_id in output.compare_product_ids
+        if product_id in allowed_product_ids
+    ]
+    referenced_indices = [
+        index
+        for index in output.referenced_product_indices
+        if index > 0 and (max_reference_index <= 0 or index <= max_reference_index)
+    ]
+    return output.model_copy(
+        update={
+            "category": category,
+            "budget": Budget(
+                min=output.budget.min,
+                max=output.budget.max,
+                currency=output.budget.currency or "CNY",
+            ),
+            "preferences": preferences,
+            "negative_preferences": negative_preferences,
+            "compare_product_ids": compare_product_ids,
+            "referenced_product_indices": referenced_indices,
+            "confidence": max(0.0, min(1.0, output.confidence)),
+            "reason": _safe_reason(output.reason),
+        }
+    )
+
+
+def merge_rule_and_llm_understanding(
+    *,
+    rule_result: QueryUnderstandingResult,
+    llm_output: LLMQueryUnderstandingOutput,
+    previous_memory: ShoppingMemory,
+    confidence_threshold: float,
+) -> QueryUnderstandingResult:
+    strong_rule = (
+        rule_result.confidence >= confidence_threshold
+        and rule_result.intent != "clarification"
+    )
+    intent = rule_result.intent if strong_rule else llm_output.intent
+    if intent not in VALID_INTENTS:
+        intent = "clarification"
+
+    category = rule_result.category or llm_output.category or previous_memory.category
+    budget = _select_budget(rule_result, llm_output, previous_memory)
+    preferences = _dedupe_short_terms(
+        [
+            *previous_memory.preferences,
+            *rule_result.preferences,
+            *llm_output.preferences,
+        ]
+    )
+    negative_preferences = _dedupe_short_terms(
+        [
+            *previous_memory.negative_preferences,
+            *rule_result.negative_preferences,
+            *llm_output.negative_preferences,
+        ]
+    )
+    preferences = [item for item in preferences if item not in negative_preferences]
+
+    current_memory = ShoppingMemory(
+        category=category,
+        budget=ShoppingBudget(
+            min=budget.min,
+            max=budget.max,
+            currency=budget.currency,
+        ),
+        preferences=preferences,
+        negative_preferences=negative_preferences,
+        last_product_ids=llm_output.compare_product_ids
+        or rule_result.compare_product_ids
+        or previous_memory.last_product_ids,
+        last_intent=intent,
+    )
+    resolved_memory = merge_shopping_memory(previous_memory, current_memory)
+    effective_query = (
+        build_effective_query(resolved_memory)
+        if resolved_memory.category and intent in {"shopping_guide", "compare"}
+        else rule_result.effective_query
+    )
+    effective_query = _sanitize_effective_query(effective_query, resolved_memory.category)
+    compare_product_ids = rule_result.compare_product_ids or llm_output.compare_product_ids
+    referenced_indices = (
+        rule_result.referenced_product_indices
+        or llm_output.referenced_product_indices
+    )
+    confidence = max(rule_result.confidence, min(llm_output.confidence, 0.85))
+    need_clarification = intent == "clarification" or (
+        intent == "shopping_guide" and not resolved_memory.category
+    )
+    reason = _combine_reasons(rule_result.reason, llm_output.reason)
+    return QueryUnderstandingResult(
+        original_query=rule_result.original_query,
+        effective_query=effective_query,
+        is_follow_up=rule_result.is_follow_up or llm_output.is_follow_up,
+        intent=intent,
+        category=resolved_memory.category,
+        category_id=category_to_id(resolved_memory.category),
+        category_path=category_to_path(resolved_memory.category),
+        budget=Budget(
+            min=resolved_memory.budget.min,
+            max=resolved_memory.budget.max,
+            currency=resolved_memory.budget.currency,
+        ),
+        preferences=resolved_memory.preferences,
+        negative_preferences=resolved_memory.negative_preferences,
+        compare_product_ids=compare_product_ids,
+        referenced_product_indices=referenced_indices,
+        confidence=confidence,
+        source="mixed",
+        reason=reason,
+        memory_updated=resolved_memory.has_shopping_context(),
+        need_clarification=need_clarification,
+        clarification_question=rule_result.clarification_question
+        if need_clarification
+        else None,
+        shopping_memory=resolved_memory.to_dict(),
+    )
+
+
+def empty_memory_from_result(result: QueryUnderstandingResult) -> ShoppingMemory:
+    if isinstance(result.shopping_memory, dict):
+        return shopping_memory_from_dict(result.shopping_memory)
+    return result.to_shopping_memory()
+
+
+def _with_llm_failure(
+    rule_result: QueryUnderstandingResult,
+    error: str,
+) -> QueryUnderstandingResult:
+    reason = rule_result.reason or "rule_low_confidence"
+    return rule_result.model_copy(
+        update={
+            "llm_fallback_attempted": True,
+            "llm_fallback_status": "failed",
+            "llm_fallback_error": error,
+            "source": "rule",
+            "reason": f"{reason}_fallback_to_rule",
+        }
+    )
+
+
+def _select_budget(
+    rule_result: QueryUnderstandingResult,
+    llm_output: LLMQueryUnderstandingOutput,
+    previous_memory: ShoppingMemory,
+) -> Budget:
+    if rule_result.budget.min is not None or rule_result.budget.max is not None:
+        return rule_result.budget
+    if llm_output.budget.min is not None or llm_output.budget.max is not None:
+        return llm_output.budget
+    return Budget(
+        min=previous_memory.budget.min,
+        max=previous_memory.budget.max,
+        currency=previous_memory.budget.currency,
+    )
+
+
+def _recent_turns_payload(history: list[Any] | None, limit: int = 3) -> list[dict[str, str]]:
+    if not history:
+        return []
+    payload: list[dict[str, str]] = []
+    for turn in list(history)[-limit:]:
+        user_query = str(getattr(turn, "user_query", "") or "")
+        assistant_answer = str(getattr(turn, "assistant_answer", "") or "")
+        if user_query:
+            payload.append({"role": "user", "content": _truncate(user_query)})
+        if assistant_answer:
+            payload.append({"role": "assistant", "content": _truncate(assistant_answer)})
+    return payload
+
+
+def _last_products_payload(memory: ShoppingMemory) -> list[dict[str, str | None]]:
+    return [{"id": product_id, "title": None} for product_id in memory.last_product_ids]
+
+
+def _looks_like_ambiguous_follow_up(query: str) -> bool:
+    lower_query = query.lower()
+    phrases = [
+        "贵一点",
+        "便宜",
+        "放宽",
+        "别太",
+        "不要太",
+        "更适合",
+        "第二个",
+        "第一个",
+        "刚才",
+        "那个",
+        "这两个",
+        "换一个",
+        "还有吗",
+        "再看看",
+        "妈妈",
+        "对象",
+    ]
+    return any(phrase in lower_query for phrase in phrases)
+
+
+def _contains_product_reference(query: str) -> bool:
+    return bool(
+        re.search(r"第[一二三四五六七八九\d]+个", query)
+        or any(term in query for term in ["刚才那个", "这两个", "这几款"])
+    )
+
+
+def _sanitize_preference_terms(
+    terms: list[str],
+    *,
+    category: str | None,
+) -> list[str]:
+    sanitized: list[str] = []
+    for term in terms:
+        item = str(term).strip()
+        if not item or not _term_length_allowed(item):
+            continue
+        if _contains_boundary_term(item):
+            continue
+        if category == "skincare" and _contains_medical_term(item):
+            sanitized.extend(_safe_skincare_terms(item))
+            continue
+        sanitized.append(item)
+    return _dedupe_short_terms(sanitized)
+
+
+def _safe_skincare_terms(term: str) -> list[str]:
+    if any(token in term for token in ["痘", "油", "痤疮"]):
+        return ["清爽", "控油", "温和"]
+    return ["温和", "保湿"]
+
+
+def _sanitize_effective_query(query: str, category: str | None) -> str:
+    if category != "skincare":
+        return query
+    sanitized = query
+    for term in SKINCARE_MEDICAL_TERMS:
+        sanitized = sanitized.replace(term, "")
+    return sanitized
+
+
+def _contains_boundary_term(text: str) -> bool:
+    return any(term in text for term in PURCHASE_BOUNDARY_TERMS)
+
+
+def _contains_medical_term(text: str) -> bool:
+    return any(term in text for term in SKINCARE_MEDICAL_TERMS)
+
+
+def _term_length_allowed(text: str) -> bool:
+    cjk_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    if cjk_count:
+        return cjk_count <= 12
+    return len(text) <= 30
+
+
+def _safe_reason(value: Any) -> str:
+    reason = str(value or "unknown").strip()[:80]
+    if not reason:
+        return "unknown"
+    if _contains_boundary_term(reason) or _contains_medical_term(reason):
+        return "unsafe_llm_reason"
+    return re.sub(r"[^A-Za-z0-9_\-+]", "_", reason) or "unknown"
+
+
+def _combine_reasons(rule_reason: str, llm_reason: str) -> str:
+    rule = _safe_reason(rule_reason or "rule_low_confidence")
+    llm = _safe_reason(llm_reason or "unknown")
+    return f"{rule}+llm_{llm}"
+
+
+def _truncate(text: str, limit: int = 240) -> str:
+    return text[:limit]
 
 
 def _dedupe_short_terms(value: Any) -> list[str]:
