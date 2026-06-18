@@ -164,6 +164,44 @@ def test_invalid_product_references_are_filtered() -> None:
     assert sanitized.referenced_product_indices == [1]
 
 
+def test_referenced_indices_are_removed_without_last_products() -> None:
+    output = LLMQueryUnderstandingOutput.model_validate(
+        {
+            "intent": "compare",
+            "referenced_product_indices": [1, 2],
+            "confidence": 0.8,
+            "reason": "compare_follow_up",
+        }
+    )
+
+    sanitized = sanitize_llm_understanding(
+        output,
+        allowed_product_ids=set(),
+        max_reference_index=0,
+    )
+
+    assert sanitized.referenced_product_indices == []
+
+
+def test_referenced_indices_keep_only_existing_product_positions() -> None:
+    output = LLMQueryUnderstandingOutput.model_validate(
+        {
+            "intent": "compare",
+            "referenced_product_indices": [0, 1, 2, 3, -1],
+            "confidence": 0.8,
+            "reason": "compare_follow_up",
+        }
+    )
+
+    sanitized = sanitize_llm_understanding(
+        output,
+        allowed_product_ids=set(),
+        max_reference_index=2,
+    )
+
+    assert sanitized.referenced_product_indices == [1, 2]
+
+
 def test_skincare_medical_claims_are_sanitized_from_llm_slots() -> None:
     previous = ShoppingMemory(
         category="skincare",

@@ -917,11 +917,14 @@ def sanitize_llm_understanding(
         for product_id in output.compare_product_ids
         if product_id in allowed_product_ids
     ]
-    referenced_indices = [
-        index
-        for index in output.referenced_product_indices
-        if index > 0 and (max_reference_index <= 0 or index <= max_reference_index)
-    ]
+    if max_reference_index <= 0:
+        referenced_indices = []
+    else:
+        referenced_indices = [
+            index
+            for index in output.referenced_product_indices
+            if 1 <= index <= max_reference_index
+        ]
     return output.model_copy(
         update={
             "category": category,
