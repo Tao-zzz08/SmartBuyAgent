@@ -180,6 +180,7 @@ class AgentStreamRunner:
                 budget_min=inner_state.budget_min,
                 budget_max=inner_state.budget_max,
                 stock_only=True,
+                brand_exclude=inner_state.negative_preferences,
                 preferences=inner_state.preferences,
             )
             inner_state.product_candidates = product_service.search_products(
@@ -191,8 +192,11 @@ class AgentStreamRunner:
                 {
                     "step": "product_retrieval",
                     "category_id": inner_state.category_id,
+                    "category": inner_state.category,
                     "budget_min": inner_state.budget_min,
                     "budget_max": inner_state.budget_max,
+                    "preferences": inner_state.preferences,
+                    "negative_preferences": inner_state.negative_preferences,
                     "candidate_count": len(inner_state.product_candidates),
                     "product_ids": [
                         candidate.product_id
@@ -235,6 +239,9 @@ class AgentStreamRunner:
                 {
                     "step": "knowledge_retrieval",
                     "category_id": inner_state.category_id,
+                    "category": inner_state.category,
+                    "preferences": inner_state.preferences,
+                    "negative_preferences": inner_state.negative_preferences,
                     "citation_count": len(inner_state.citations),
                     "chunk_ids": [
                         citation.chunk_id for citation in inner_state.citations
@@ -696,9 +703,11 @@ def _node_summary(
     if node_name == "intent_router":
         return {
             "intent": state.intent,
+            "category": state.category,
             "category_id": state.category_id,
             "budget_max": state.budget_max,
             "preferences": state.preferences,
+            "negative_preferences": state.negative_preferences,
         }
     return {}
 
@@ -728,9 +737,12 @@ def _retrieval_events_from_trace(
             {
                 "type": "product",
                 "query": query,
+                "category": trace_step.get("category"),
                 "category_id": trace_step.get("category_id") or category_id,
                 "budget_min": trace_step.get("budget_min", budget_min),
                 "budget_max": trace_step.get("budget_max", budget_max),
+                "preferences": trace_step.get("preferences", []),
+                "negative_preferences": trace_step.get("negative_preferences", []),
                 "returned_products": trace_step.get("candidate_count", 0),
                 "candidate_product_ids": trace_step.get("product_ids", []),
                 "cache_status": trace_step.get("cache_status"),
@@ -742,7 +754,10 @@ def _retrieval_events_from_trace(
             {
                 "type": "knowledge",
                 "query": query,
+                "category": trace_step.get("category"),
                 "category_id": trace_step.get("category_id") or category_id,
+                "preferences": trace_step.get("preferences", []),
+                "negative_preferences": trace_step.get("negative_preferences", []),
                 "returned_chunks": trace_step.get("citation_count", 0),
                 "chunk_ids": trace_step.get("chunk_ids", []),
                 "cache_status": trace_step.get("cache_status"),

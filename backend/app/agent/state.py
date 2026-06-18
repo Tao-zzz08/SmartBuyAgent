@@ -9,13 +9,17 @@ class AgentState:
     original_query: str
     effective_query: str
     session_id: str | None = None
+    query_understanding: dict[str, Any] = field(default_factory=dict)
     intent: str | None = None
+    category: str | None = None
     category_id: str | None = None
     category_path: str | None = None
     budget_min: int | None = None
     budget_max: int | None = None
     preferences: list[str] = field(default_factory=list)
     negative_preferences: list[str] = field(default_factory=list)
+    compare_product_ids: list[str] = field(default_factory=list)
+    referenced_product_indices: list[int] = field(default_factory=list)
     need_clarification: bool = False
     clarification_question: str | None = None
     shopping_memory: Any | None = None

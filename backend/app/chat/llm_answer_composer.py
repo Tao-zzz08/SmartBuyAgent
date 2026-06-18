@@ -18,7 +18,7 @@ MAX_PRODUCTS = 3
 MAX_CITATIONS = 5
 MAX_ATTRIBUTES = 8
 MAX_EVIDENCE_LENGTH = 260
-MAX_CITATION_PREVIEW_LENGTH = 320
+MAX_CITATION_PREVIEW_LENGTH = 280
 SAFE_LLM_FALLBACK_ANSWER = "当前没有找到足够匹配的商品或知识依据，建议你调整预算、品类或偏好后再试。"
 PRODUCT_ID_PATTERN = re.compile(r"\b[a-zA-Z]+_\d+\b")
 URL_PATTERN = re.compile(r"https?://[^\s)）\]】>\"']+")
@@ -297,6 +297,7 @@ def _build_user_prompt(
         f"- budget_min: {query_result.budget_min if query_result.budget_min is not None else '-'}",
         f"- budget_max: {query_result.budget_max if query_result.budget_max is not None else '-'}",
         f"- preferences: {', '.join(query_result.preferences) if query_result.preferences else '-'}",
+        f"- negative_preferences: {', '.join(query_result.negative_preferences) if query_result.negative_preferences else '-'}",
         "",
         "候选商品：",
         _format_products(product_candidates),

@@ -1,4 +1,5 @@
 from app.chat.query_understanding import QueryUnderstandingService
+from app.chat.shopping_memory import Budget, ShoppingMemory
 
 
 def test_phone_shopping_guide_query() -> None:
@@ -12,6 +13,36 @@ def test_phone_shopping_guide_query() -> None:
     assert result.budget_max == 3000
     assert "拍照" in result.preferences
     assert result.need_clarification is False
+
+
+def test_query_understanding_result_merges_previous_shopping_memory() -> None:
+    service = QueryUnderstandingService()
+    previous = ShoppingMemory(
+        category="phone",
+        budget=Budget(max=4000),
+        preferences=["拍照"],
+        negative_preferences=[],
+        last_intent="shopping_guide",
+    )
+
+    result = service.understand("增加到5000呢", previous_memory=previous)
+
+    assert result.original_query == "增加到5000呢"
+    assert result.effective_query == "预算5000元以内，推荐拍照好的手机"
+    assert result.is_follow_up is True
+    assert result.intent == "shopping_guide"
+    assert result.category == "phone"
+    assert result.budget.model_dump() == {
+        "min": None,
+        "max": 5000,
+        "currency": "CNY",
+    }
+    assert result.preferences == ["拍照"]
+    assert result.negative_preferences == []
+    assert result.source == "rule"
+    assert 0 <= result.confidence <= 1
+    assert result.reason == "budget_update_follow_up"
+    assert result.shopping_memory["last_intent"] == "shopping_guide"
 
 
 def test_shoes_shopping_guide_query() -> None:

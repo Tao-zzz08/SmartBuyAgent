@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any
 
 from app.agent.context import AgentRuntimeContext
@@ -13,14 +12,6 @@ from app.chat.query_understanding import (
     QueryUnderstandingService,
 )
 from app.chat.response_composer import ChatResponse, ResponseComposer
-from app.chat.shopping_memory import (
-    Budget,
-    ShoppingMemory,
-    build_effective_query,
-    category_to_id,
-    category_to_path,
-    shopping_memory_from_dict,
-)
 from app.retrieval.retrieval_service import (
     KnowledgeRetrievalService,
     ProductRetrievalService,
@@ -148,69 +139,36 @@ def intent_router_node(
 
     try:
         service = context.query_understanding_service or QueryUnderstandingService()
-        result = service.understand(state.effective_query)
-        memory = _resolved_shopping_memory(state, result)
-        if memory is not None and memory.category:
-            state.effective_query = build_effective_query(memory)
-            result = replace(
-                result,
-                intent="shopping_guide"
-                if result.intent in {"chitchat", "clarification"}
-                else result.intent,
-                category=memory.category,
-                category_id=category_to_id(memory.category),
-                category_path=category_to_path(memory.category),
-                budget_min=memory.budget.min,
-                budget_max=memory.budget.max,
-                preferences=list(memory.preferences),
-                negative_preferences=list(memory.negative_preferences),
-                shopping_memory=memory.to_dict(),
-                effective_query=state.effective_query,
-                is_follow_up=bool(
-                    getattr(state.rewrite_result, "is_follow_up", False)
-                ),
-                reason=getattr(state.rewrite_result, "reason", result.reason),
-                need_clarification=False,
-                clarification_question=None,
+        try:
+            result = service.understand(
+                state.original_query,
+                session_id=state.session_id,
+                history=state.recent_turns,
+                rewrite_result=state.rewrite_result,
             )
-        elif result.effective_query and result.effective_query != state.effective_query:
-            state.effective_query = result.effective_query
+        except TypeError:
+            result = service.understand(state.effective_query)
+        state.effective_query = result.effective_query
 
         state.query_result = result
+        state.query_understanding = result.to_trace_dict()
         state.intent = result.intent
+        state.category = result.category
         state.category_id = result.category_id
         state.category_path = result.category_path
         state.budget_min = result.budget_min
         state.budget_max = result.budget_max
         state.preferences = list(result.preferences)
         state.negative_preferences = list(getattr(result, "negative_preferences", []))
+        state.compare_product_ids = list(result.compare_product_ids)
+        state.referenced_product_indices = list(result.referenced_product_indices)
         state.shopping_memory = getattr(result, "shopping_memory", None)
         state.need_clarification = result.need_clarification
         state.clarification_question = result.clarification_question
         _append_step(
             state,
             "query_understanding",
-            original_query=state.original_query,
-            effective_query=state.effective_query,
-            is_follow_up=bool(getattr(state.rewrite_result, "is_follow_up", False)),
-            intent=result.intent,
-            category=getattr(result, "category", None),
-            category_id=result.category_id,
-            category_path=result.category_path,
-            budget={
-                "min": result.budget_min,
-                "max": result.budget_max,
-                "currency": "CNY",
-            },
-            budget_min=result.budget_min,
-            budget_max=result.budget_max,
-            preferences=result.preferences,
-            negative_preferences=getattr(result, "negative_preferences", []),
-            source=getattr(result, "source", "rule"),
-            confidence=getattr(result, "confidence", 0.8),
-            reason=getattr(result, "reason", None),
-            shopping_memory=getattr(result, "shopping_memory", None),
-            need_clarification=result.need_clarification,
+            **state.query_understanding,
         )
         return state
     except Exception as exc:
@@ -238,6 +196,7 @@ def shopping_guide_node(
             budget_min=state.budget_min,
             budget_max=state.budget_max,
             stock_only=True,
+            brand_exclude=state.negative_preferences,
             preferences=state.preferences,
         )
         state.product_candidates = product_service.search_products(
@@ -251,6 +210,8 @@ def shopping_guide_node(
             category_id=state.category_id,
             budget_min=state.budget_min,
             budget_max=state.budget_max,
+            preferences=state.preferences,
+            negative_preferences=state.negative_preferences,
             candidate_count=len(state.product_candidates),
             product_ids=[
                 candidate.product_id for candidate in state.product_candidates
@@ -267,6 +228,9 @@ def shopping_guide_node(
             state,
             "knowledge_retrieval",
             category_id=state.category_id,
+            category=state.category,
+            preferences=state.preferences,
+            negative_preferences=state.negative_preferences,
             citation_count=len(state.citations),
             cache_status=getattr(knowledge_service, "last_cache_status", None),
         )
@@ -298,6 +262,9 @@ def product_knowledge_node(
             state,
             "knowledge_retrieval",
             category_id=state.category_id,
+            category=state.category,
+            preferences=state.preferences,
+            negative_preferences=state.negative_preferences,
             citation_count=len(state.citations),
             cache_status=getattr(knowledge_service, "last_cache_status", None),
         )
@@ -512,31 +479,6 @@ def _build_compare_context(result: Any) -> CompareContext | None:
             focus_preferences=list(focus_preferences),
         )
 
-    return None
-
-
-def _resolved_shopping_memory(
-    state: AgentState,
-    result: QueryUnderstandingResult,
-) -> ShoppingMemory | None:
-    rewrite_memory = getattr(state.rewrite_result, "shopping_memory", None)
-    if isinstance(rewrite_memory, dict):
-        return shopping_memory_from_dict(rewrite_memory)
-
-    result_memory = getattr(result, "shopping_memory", None)
-    if isinstance(result_memory, dict):
-        memory = shopping_memory_from_dict(result_memory)
-        if result.intent == "shopping_guide" and memory.category:
-            return memory
-
-    if result.intent == "shopping_guide" and result.category_id:
-        return ShoppingMemory(
-            category=getattr(result, "category", None),
-            budget=Budget(min=result.budget_min, max=result.budget_max),
-            preferences=list(result.preferences),
-            negative_preferences=list(getattr(result, "negative_preferences", [])),
-            last_intent=result.intent,
-        )
     return None
 
 

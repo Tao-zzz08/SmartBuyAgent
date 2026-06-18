@@ -152,7 +152,57 @@ def test_intent_router_node_populates_query_understanding() -> None:
     assert state.budget_max == 3000
     assert "拍照" in state.preferences
     assert state.query_result is not None
+    assert state.query_understanding["original_query"] == state.original_query
+    assert state.query_understanding["effective_query"] == state.effective_query
+    assert state.query_understanding["category"] == "phone"
+    assert state.query_understanding["budget"]["max"] == 3000
+    assert state.query_understanding["preferences"] == state.preferences
     assert "query_understanding" in _trace_steps(state)
+
+
+class RecordingProductRetrievalService:
+    last_cache_status = "miss"
+
+    def __init__(self) -> None:
+        self.query = None
+        self.filters = None
+        self.top_k = None
+
+    def search_products(self, query, filters=None, top_k=3):
+        self.query = query
+        self.filters = filters
+        self.top_k = top_k
+        return []
+
+
+class EmptyKnowledgeRetrievalService:
+    last_cache_status = "disabled"
+
+    def search_knowledge(self, query, category_id=None, top_k=3):
+        self.query = query
+        self.category_id = category_id
+        self.top_k = top_k
+        return []
+
+
+def test_shopping_guide_node_passes_structured_filters_to_product_retrieval() -> None:
+    product_service = RecordingProductRetrievalService()
+    knowledge_service = EmptyKnowledgeRetrievalService()
+    context = AgentRuntimeContext(
+        query_understanding_service=QueryUnderstandingService(),
+        product_retrieval_service=product_service,
+        knowledge_retrieval_service=knowledge_service,
+    )
+    state = create_initial_agent_state("预算5000，推荐拍照好的手机，不考虑苹果")
+
+    intent_router_node(state, context)
+    shopping_guide_node(state, context)
+
+    assert product_service.query == state.effective_query
+    assert product_service.filters.category_id == "cat_phone"
+    assert product_service.filters.budget_max == 5000
+    assert "拍照" in product_service.filters.preferences
+    assert "苹果" in product_service.filters.brand_exclude
 
 
 def test_shopping_guide_node_retrieves_products_and_citations(agent_context) -> None:

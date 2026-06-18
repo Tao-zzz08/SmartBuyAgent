@@ -271,7 +271,7 @@ def merge_shopping_memory(
         preferences=preferences,
         negative_preferences=negative_preferences,
         last_product_ids=current.last_product_ids or previous.last_product_ids,
-        last_intent=current.last_intent or previous.last_intent,
+        last_intent=_merge_last_intent(previous.last_intent, current.last_intent),
     )
 
 
@@ -467,6 +467,12 @@ def _filter_preferences_for_category(preferences: list[str], category: str | Non
         return list(preferences)
     compatible = CATEGORY_COMPATIBLE_PREFERENCES[category]
     return [item for item in preferences if item in compatible]
+
+
+def _merge_last_intent(previous: str | None, current: str | None) -> str | None:
+    if current in {"shopping_guide", "product_knowledge", "compare"}:
+        return current
+    return previous or current
 
 
 def _normalize_negative_target(value: str) -> str | None:
