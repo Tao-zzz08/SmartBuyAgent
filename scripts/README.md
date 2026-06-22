@@ -12,6 +12,7 @@ This directory contains project maintenance, seed import, indexing, and evaluati
 - `rebuild_index.py`: rebuilds Chroma indexes for `product_text` and `knowledge_docs`.
 - `eval_retrieval.py`: runs lightweight product and knowledge retrieval evaluation cases.
 - `eval_multiturn.py`: runs lightweight multiturn rewrite and comparison evaluation cases.
+- `run_query_understanding_eval.py`: runs QueryUnderstanding 2.0 regression cases for multi-turn shopping constraints, safety boundaries, and chat/stream trace consistency.
 
 Default local indexing uses mock embedding. OpenAI-compatible embedding can be enabled through `.env`, and indexes must be rebuilt after changing provider, model, or dimension.
 

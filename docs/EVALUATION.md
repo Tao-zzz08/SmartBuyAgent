@@ -77,13 +77,25 @@ Multiturn cases live in:
 data/eval/multiturn_eval_cases.json
 ```
 
+QueryUnderstanding 2.0 regression cases live in:
+
+```text
+data/eval/query_understanding_regression_cases.json
+```
+
 Run:
 
 ```bash
 cd backend
 python ../scripts/eval_retrieval.py
 python ../scripts/eval_multiturn.py
+python ../scripts/run_query_understanding_eval.py
 ```
+
+The QueryUnderstanding regression suite covers multi-turn budget updates, numeric
+follow-ups, category switching, preference and negative-preference updates,
+validated LLM slot fallback, product comparison references, skincare safety
+boundaries, product card / citation constraints, and chat-vs-stream consistency.
 
 These checks are lightweight workflow and rule assertions. They are not final business metrics.
 
