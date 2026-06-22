@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.agent.context import AgentRuntimeContext
@@ -165,6 +166,7 @@ def intent_router_node(
         state.shopping_memory = getattr(result, "shopping_memory", None)
         state.need_clarification = result.need_clarification
         state.clarification_question = result.clarification_question
+        _apply_structured_compare_context(state)
         _append_step(
             state,
             "query_understanding",
@@ -207,26 +209,48 @@ def shopping_guide_node(
         _append_step(
             state,
             "product_retrieval",
+            query=state.effective_query,
             category_id=state.category_id,
+            category=state.category,
             budget_min=state.budget_min,
             budget_max=state.budget_max,
             preferences=state.preferences,
             negative_preferences=state.negative_preferences,
+            structured_filters=_structured_filters_from_state(state),
             candidate_count=len(state.product_candidates),
+            filtered_count=getattr(
+                product_service,
+                "last_filtered_count",
+                len(state.product_candidates),
+            ),
+            negative_filtered_count=getattr(
+                product_service,
+                "last_negative_filtered_count",
+                0,
+            ),
+            negative_filter_fallback=getattr(
+                product_service,
+                "last_negative_filter_fallback",
+                False,
+            ),
             product_ids=[
                 candidate.product_id for candidate in state.product_candidates
             ],
             cache_status=getattr(product_service, "last_cache_status", None),
         )
 
-        state.citations = knowledge_service.search_knowledge(
+        state.citations = _search_knowledge_structured(
+            knowledge_service,
             query=state.effective_query,
             category_id=state.category_id,
             top_k=3,
+            preferences=state.preferences,
+            negative_preferences=state.negative_preferences,
         )
         _append_step(
             state,
             "knowledge_retrieval",
+            query=getattr(knowledge_service, "last_query", state.effective_query),
             category_id=state.category_id,
             category=state.category,
             preferences=state.preferences,
@@ -253,14 +277,18 @@ def product_knowledge_node(
         return append_trace(state, "product_knowledge", status="skipped")
 
     try:
-        state.citations = knowledge_service.search_knowledge(
+        state.citations = _search_knowledge_structured(
+            knowledge_service,
             query=state.effective_query,
             category_id=state.category_id,
             top_k=5,
+            preferences=state.preferences,
+            negative_preferences=state.negative_preferences,
         )
         _append_step(
             state,
             "knowledge_retrieval",
+            query=getattr(knowledge_service, "last_query", state.effective_query),
             category_id=state.category_id,
             category=state.category,
             preferences=state.preferences,
@@ -281,7 +309,13 @@ def compare_node(
     if context is None:
         return append_trace(state, "compare")
 
-    product_ids, source, focus_preferences = _compare_context_parts(
+    (
+        product_ids,
+        source,
+        focus_preferences,
+        referenced_product_indices,
+        resolved_from_last_products,
+    ) = _compare_context_parts(
         state.compare_context
     )
     if not product_ids:
@@ -289,6 +323,10 @@ def compare_node(
             state,
             "product_comparison",
             status="skipped",
+            reason="missing_compare_product_ids",
+            compare_product_ids=[],
+            referenced_product_indices=state.referenced_product_indices,
+            resolved_from_last_products=False,
             requested_product_ids=[],
             returned_product_ids=[],
             missing_product_ids=[],
@@ -314,6 +352,8 @@ def compare_node(
             product_ids=product_ids,
             focus_preferences=focus_preferences,
             source=source,
+            referenced_product_indices=referenced_product_indices,
+            resolved_from_last_products=resolved_from_last_products,
         )
         state.product_candidates = result.product_candidates
         state.answer = result.answer
@@ -334,15 +374,22 @@ def compare_node(
         state.trace.append(result.trace)
         knowledge_service = _knowledge_retrieval_service(context)
         if knowledge_service is not None and state.category_id:
-            state.citations = knowledge_service.search_knowledge(
+            state.citations = _search_knowledge_structured(
+                knowledge_service,
                 query=state.effective_query,
                 category_id=state.category_id,
                 top_k=3,
+                preferences=state.preferences,
+                negative_preferences=state.negative_preferences,
             )
             _append_step(
                 state,
                 "knowledge_retrieval",
+                query=getattr(knowledge_service, "last_query", state.effective_query),
                 category_id=state.category_id,
+                category=state.category,
+                preferences=state.preferences,
+                negative_preferences=state.negative_preferences,
                 citation_count=len(state.citations),
                 cache_status=getattr(knowledge_service, "last_cache_status", None),
             )
@@ -459,6 +506,110 @@ def _append_follow_up_trace(state: AgentState, status: str, result: Any) -> None
     )
 
 
+def _apply_structured_compare_context(state: AgentState) -> None:
+    existing_product_ids, _, _, _, _ = _compare_context_parts(state.compare_context)
+    if existing_product_ids:
+        return
+
+    if state.compare_product_ids:
+        state.compare_context = CompareContext(
+            product_ids=list(state.compare_product_ids),
+            source="compare_product_ids",
+            focus_preferences=list(state.preferences),
+            referenced_product_indices=list(state.referenced_product_indices),
+            resolved_from_last_products=False,
+        )
+        return
+
+    last_product_ids = _last_product_ids_from_state(state)
+    if state.referenced_product_indices:
+        resolved_ids = [
+            last_product_ids[index - 1]
+            for index in state.referenced_product_indices
+            if 1 <= index <= len(last_product_ids)
+        ]
+        if resolved_ids:
+            state.compare_product_ids = resolved_ids
+            state.compare_context = CompareContext(
+                product_ids=resolved_ids,
+                source="referenced_product_indices",
+                focus_preferences=list(state.preferences),
+                referenced_product_indices=list(state.referenced_product_indices),
+                resolved_from_last_products=True,
+            )
+            return
+
+        state.need_clarification = True
+        _set_compare_clarification(state)
+        _append_step(
+            state,
+            "product_comparison",
+            status="skipped",
+            reason="missing_last_products",
+            compare_product_ids=[],
+            referenced_product_indices=list(state.referenced_product_indices),
+            resolved_from_last_products=False,
+            requested_product_ids=[],
+            returned_product_ids=[],
+            missing_product_ids=[],
+            comparison_product_count=0,
+        )
+        return
+
+    if state.intent == "compare" and not last_product_ids:
+        state.need_clarification = True
+        _set_compare_clarification(state)
+        _append_step(
+            state,
+            "product_comparison",
+            status="skipped",
+            reason="missing_last_products",
+            compare_product_ids=[],
+            referenced_product_indices=[],
+            resolved_from_last_products=False,
+            requested_product_ids=[],
+            returned_product_ids=[],
+            missing_product_ids=[],
+            comparison_product_count=0,
+        )
+
+
+def _set_compare_clarification(state: AgentState) -> None:
+    question = "我还没有上一轮可引用的商品，请先让我推荐几款商品后再比较。"
+    state.need_clarification = True
+    state.clarification_question = state.clarification_question or question
+    if state.query_result is not None:
+        state.query_result = state.query_result.model_copy(
+            update={
+                "intent": "clarification",
+                "need_clarification": True,
+                "clarification_question": state.clarification_question,
+            }
+        )
+        state.query_understanding = state.query_result.to_trace_dict()
+
+
+def _last_product_ids_from_state(state: AgentState) -> list[str]:
+    for payload in [state.shopping_memory, state.query_understanding.get("shopping_memory")]:
+        if isinstance(payload, dict):
+            ids = _list_of_str(payload.get("last_product_ids"))
+            if ids:
+                return ids
+
+    for turn in reversed(state.recent_turns):
+        raw_ids = getattr(turn, "product_ids_json", None)
+        if not raw_ids:
+            continue
+        try:
+            value = json.loads(raw_ids)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        ids = _list_of_str(value)
+        if ids:
+            return ids
+    return []
+
+
 def _build_compare_context(result: Any) -> CompareContext | None:
     context_used = getattr(result, "context_used", {}) or {}
     resolved_product_ids = context_used.get("resolved_product_ids") or []
@@ -470,6 +621,7 @@ def _build_compare_context(result: Any) -> CompareContext | None:
             product_ids=list(resolved_product_ids),
             source="resolved_product_ids",
             focus_preferences=list(focus_preferences),
+            resolved_from_last_products=True,
         )
 
     if getattr(result, "reason", None) == "vague_product_reference" and referenced_product_ids:
@@ -477,6 +629,7 @@ def _build_compare_context(result: Any) -> CompareContext | None:
             product_ids=list(referenced_product_ids),
             source="referenced_product_ids",
             focus_preferences=list(focus_preferences),
+            resolved_from_last_products=True,
         )
 
     return None
@@ -525,20 +678,68 @@ def _product_comparison_service(
     return context.product_comparison_service
 
 
-def _compare_context_parts(compare_context: Any) -> tuple[list[str], str, list[str]]:
+def _compare_context_parts(
+    compare_context: Any,
+) -> tuple[list[str], str, list[str], list[int], bool]:
     if isinstance(compare_context, CompareContext):
         return (
             list(compare_context.product_ids),
             compare_context.source,
             list(compare_context.focus_preferences),
+            list(compare_context.referenced_product_indices),
+            compare_context.resolved_from_last_products,
         )
     if isinstance(compare_context, dict):
         return (
             list(compare_context.get("product_ids") or []),
             str(compare_context.get("source") or "unknown"),
             list(compare_context.get("focus_preferences") or []),
+            list(compare_context.get("referenced_product_indices") or []),
+            bool(compare_context.get("resolved_from_last_products")),
         )
-    return [], "unknown", []
+    return [], "unknown", [], [], False
+
+
+def _structured_filters_from_state(state: AgentState) -> dict[str, Any]:
+    return {
+        "category": state.category,
+        "category_id": state.category_id,
+        "budget_min": state.budget_min,
+        "budget_max": state.budget_max,
+        "preferences": list(state.preferences),
+        "negative_preferences": list(state.negative_preferences),
+    }
+
+
+def _search_knowledge_structured(
+    knowledge_service: Any,
+    *,
+    query: str,
+    category_id: str | None,
+    top_k: int,
+    preferences: list[str],
+    negative_preferences: list[str],
+):
+    try:
+        return knowledge_service.search_knowledge(
+            query=query,
+            category_id=category_id,
+            top_k=top_k,
+            preferences=preferences,
+            negative_preferences=negative_preferences,
+        )
+    except TypeError:
+        return knowledge_service.search_knowledge(
+            query=query,
+            category_id=category_id,
+            top_k=top_k,
+        )
+
+
+def _list_of_str(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None and str(item)]
 
 
 def _compose_simple_response(

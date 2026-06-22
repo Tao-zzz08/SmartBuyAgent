@@ -17,6 +17,8 @@ from app.agent.nodes import (
     intent_router_node,
     load_context_node,
     save_trace_node,
+    _search_knowledge_structured,
+    _structured_filters_from_state,
 )
 from app.agent.state import AgentState, create_initial_agent_state
 from app.agent.workflow import _route_name_for_state
@@ -191,13 +193,30 @@ class AgentStreamRunner:
             inner_state.trace.append(
                 {
                     "step": "product_retrieval",
+                    "query": inner_state.effective_query,
                     "category_id": inner_state.category_id,
                     "category": inner_state.category,
                     "budget_min": inner_state.budget_min,
                     "budget_max": inner_state.budget_max,
                     "preferences": inner_state.preferences,
                     "negative_preferences": inner_state.negative_preferences,
+                    "structured_filters": _structured_filters_from_state(inner_state),
                     "candidate_count": len(inner_state.product_candidates),
+                    "filtered_count": getattr(
+                        product_service,
+                        "last_filtered_count",
+                        len(inner_state.product_candidates),
+                    ),
+                    "negative_filtered_count": getattr(
+                        product_service,
+                        "last_negative_filtered_count",
+                        0,
+                    ),
+                    "negative_filter_fallback": getattr(
+                        product_service,
+                        "last_negative_filter_fallback",
+                        False,
+                    ),
                     "product_ids": [
                         candidate.product_id
                         for candidate in inner_state.product_candidates
@@ -230,14 +249,22 @@ class AgentStreamRunner:
                 inner_state.errors.append("knowledge_retrieval: service unavailable")
                 return append_trace(inner_state, "knowledge_retrieval", status="skipped")
 
-            inner_state.citations = knowledge_service.search_knowledge(
+            inner_state.citations = _search_knowledge_structured(
+                knowledge_service,
                 query=inner_state.effective_query,
                 category_id=inner_state.category_id,
                 top_k=top_k,
+                preferences=inner_state.preferences,
+                negative_preferences=inner_state.negative_preferences,
             )
             inner_state.trace.append(
                 {
                     "step": "knowledge_retrieval",
+                    "query": getattr(
+                        knowledge_service,
+                        "last_query",
+                        inner_state.effective_query,
+                    ),
                     "category_id": inner_state.category_id,
                     "category": inner_state.category,
                     "preferences": inner_state.preferences,
@@ -736,14 +763,21 @@ def _retrieval_events_from_trace(
         return [
             {
                 "type": "product",
-                "query": query,
+                "query": trace_step.get("query", query),
                 "category": trace_step.get("category"),
                 "category_id": trace_step.get("category_id") or category_id,
                 "budget_min": trace_step.get("budget_min", budget_min),
                 "budget_max": trace_step.get("budget_max", budget_max),
                 "preferences": trace_step.get("preferences", []),
                 "negative_preferences": trace_step.get("negative_preferences", []),
+                "structured_filters": trace_step.get("structured_filters", {}),
                 "returned_products": trace_step.get("candidate_count", 0),
+                "filtered_count": trace_step.get("filtered_count"),
+                "negative_filtered_count": trace_step.get("negative_filtered_count", 0),
+                "negative_filter_fallback": trace_step.get(
+                    "negative_filter_fallback",
+                    False,
+                ),
                 "candidate_product_ids": trace_step.get("product_ids", []),
                 "cache_status": trace_step.get("cache_status"),
                 "status": trace_step.get("status", "success"),
@@ -753,7 +787,7 @@ def _retrieval_events_from_trace(
         return [
             {
                 "type": "knowledge",
-                "query": query,
+                "query": trace_step.get("query", query),
                 "category": trace_step.get("category"),
                 "category_id": trace_step.get("category_id") or category_id,
                 "preferences": trace_step.get("preferences", []),

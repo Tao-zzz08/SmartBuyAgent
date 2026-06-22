@@ -127,6 +127,9 @@ def _route_name_for_state(state: AgentState) -> RouteName:
     if state.intent == "product_knowledge":
         return "product_knowledge"
 
+    if state.intent == "compare":
+        return "clarification"
+
     if state.intent == "chitchat":
         return "chitchat"
 

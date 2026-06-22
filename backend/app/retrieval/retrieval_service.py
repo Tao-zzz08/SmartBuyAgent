@@ -5,7 +5,7 @@ import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.cache.cache_service import CacheService
@@ -222,6 +222,35 @@ PRODUCT_PREFERENCE_KEYWORDS: dict[str, list[str]] = {
     "温和": ["温和", "敏感肌", "低刺激", "成分精简"],
 }
 
+NEGATIVE_PREFERENCE_KEYWORDS: dict[str, list[str]] = {
+    "苹果": ["苹果", "apple", "iphone"],
+    "三星": ["三星", "samsung"],
+    "小米": ["小米", "xiaomi", "redmi", "poco"],
+    "红米": ["红米", "redmi"],
+    "高跟": ["高跟", "高跟鞋"],
+    "美白": ["美白"],
+    "太贵": ["太贵", "昂贵", "高价"],
+    "厚重": ["厚重", "重"],
+}
+
+KNOWLEDGE_CATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "cat_phone": ["手机", "选购建议"],
+    "cat_shoes": ["鞋靴", "选购建议"],
+    "cat_skincare": ["护肤品", "日常护理"],
+}
+
+KNOWLEDGE_SKINCARE_UNSAFE_TERMS = [
+    "治疗",
+    "治愈",
+    "药效",
+    "处方",
+    "医学修复",
+    "修复疾病",
+    "祛病",
+]
+
+KNOWLEDGE_SKINCARE_SAFE_TERMS = ["清爽", "控油", "温和护理", "保湿", "敏感肌"]
+
 
 QUERY_KEYWORD_GROUPS: list[tuple[set[str], list[str]]] = [
     (
@@ -287,6 +316,71 @@ def _expand_preference_keywords(
     return _unique_ordered(keywords)
 
 
+def _expand_negative_keywords(negative_preferences: list[str] | None) -> list[str]:
+    keywords: list[str] = []
+    for preference in negative_preferences or []:
+        keywords.append(preference)
+        keywords.extend(NEGATIVE_PREFERENCE_KEYWORDS.get(preference, []))
+    return _unique_ordered(keywords)
+
+
+def _candidate_structured_text(candidate: ProductCandidate) -> str:
+    return " ".join(
+        [
+            candidate.product_id,
+            candidate.title,
+            candidate.brand or "",
+            candidate.description or "",
+            " ".join(candidate.tags),
+            " ".join(candidate.attributes.keys()),
+            " ".join(candidate.attributes.values()),
+            candidate.product_text,
+        ]
+    )
+
+
+def _matches_negative_preferences(
+    candidate: ProductCandidate,
+    negative_preferences: list[str] | None,
+) -> bool:
+    keywords = _expand_negative_keywords(negative_preferences)
+    if not keywords:
+        return False
+    return _keyword_match_count(_candidate_structured_text(candidate), keywords) > 0
+
+
+def _apply_negative_preference_filter(
+    candidates: list[ProductCandidate],
+    negative_preferences: list[str] | None,
+) -> tuple[list[ProductCandidate], int, bool]:
+    if not candidates or not negative_preferences:
+        return candidates, 0, False
+
+    matched = [
+        candidate
+        for candidate in candidates
+        if _matches_negative_preferences(candidate, negative_preferences)
+    ]
+    if not matched:
+        return candidates, 0, False
+
+    filtered = [
+        candidate
+        for candidate in candidates
+        if not _matches_negative_preferences(candidate, negative_preferences)
+    ]
+    if filtered:
+        return filtered, len(matched), False
+
+    penalized = [
+        replace(candidate, score=round(candidate.score - 2.0, 4))
+        if _matches_negative_preferences(candidate, negative_preferences)
+        else candidate
+        for candidate in candidates
+    ]
+    return penalized, len(matched), True
+
+
 def _score_product_rerank(
     candidate: ProductCandidate,
     query: str,
@@ -339,6 +433,34 @@ def _rerank_product_candidates(
             key=lambda item: (-item[1].score, item[0]),
         )
     ]
+
+
+def build_knowledge_retrieval_query(
+    query: str,
+    *,
+    category_id: str | None = None,
+    preferences: list[str] | None = None,
+    negative_preferences: list[str] | None = None,
+) -> str:
+    parts: list[str] = []
+    parts.extend(KNOWLEDGE_CATEGORY_KEYWORDS.get(category_id or "", []))
+    parts.extend(preferences or [])
+    parts.append(query)
+    if negative_preferences:
+        parts.append(f"不考虑 {' '.join(negative_preferences)}")
+
+    structured_query = " ".join(part for part in parts if part).strip()
+    if category_id == "cat_skincare":
+        had_unsafe = any(
+            term in structured_query for term in KNOWLEDGE_SKINCARE_UNSAFE_TERMS
+        )
+        for term in KNOWLEDGE_SKINCARE_UNSAFE_TERMS:
+            structured_query = structured_query.replace(term, "")
+        if had_unsafe:
+            structured_query = " ".join(
+                [structured_query, *KNOWLEDGE_SKINCARE_SAFE_TERMS]
+            )
+    return " ".join(structured_query.split())
 
 
 def _extract_query_keywords(query: str, category_id: str | None = None) -> list[str]:
@@ -456,6 +578,10 @@ class ProductRetrievalService:
         self.chroma_client = chroma_client or get_chroma_client()
         self.cache_service = cache_service
         self.last_cache_status = "disabled" if cache_service is None else "miss"
+        self.last_structured_filters: dict[str, Any] = {}
+        self.last_filtered_count = 0
+        self.last_negative_filtered_count = 0
+        self.last_negative_filter_fallback = False
 
     def search_products(
         self,
@@ -465,6 +591,17 @@ class ProductRetrievalService:
         semantic_top_k: int = 30,
     ) -> list[ProductCandidate]:
         product_filters = _as_product_filters(filters)
+        self.last_structured_filters = {
+            "category_id": product_filters.category_id,
+            "budget_min": product_filters.budget_min,
+            "budget_max": product_filters.budget_max,
+            "preferences": list(product_filters.preferences),
+            "negative_preferences": list(product_filters.brand_exclude),
+            "stock_only": product_filters.stock_only,
+        }
+        self.last_filtered_count = 0
+        self.last_negative_filtered_count = 0
+        self.last_negative_filter_fallback = False
         cache_key = _cache_key(
             "products",
             {
@@ -481,6 +618,7 @@ class ProductRetrievalService:
         )
         cached_candidates = self._get_cached_candidates(cache_key)
         if cached_candidates is not None:
+            self.last_filtered_count = len(cached_candidates)
             return cached_candidates
 
         allowed_products = self._filter_products(product_filters)
@@ -523,11 +661,21 @@ class ProductRetrievalService:
                 if len(candidates) >= candidate_limit:
                     break
 
+        candidates, negative_filtered_count, negative_filter_fallback = (
+            _apply_negative_preference_filter(
+                candidates,
+                product_filters.brand_exclude,
+            )
+        )
+        self.last_negative_filtered_count = negative_filtered_count
+        self.last_negative_filter_fallback = negative_filter_fallback
+
         results = _rerank_product_candidates(
             candidates,
             query=query,
             preferences=product_filters.preferences,
         )[:top_k]
+        self.last_filtered_count = len(results)
         self._set_cached_candidates(cache_key, results)
         return results
 
@@ -584,7 +732,9 @@ class ProductRetrievalService:
         if filters.stock_only:
             statement = statement.where(Product.stock > 0)
         if filters.brand_exclude:
-            statement = statement.where(Product.brand.not_in(filters.brand_exclude))
+            statement = statement.where(
+                or_(Product.brand.is_(None), Product.brand.not_in(filters.brand_exclude))
+            )
 
         return self.db.execute(statement.order_by(Product.id)).scalars().all()
 
@@ -640,6 +790,7 @@ class KnowledgeRetrievalService:
         self.chroma_client = chroma_client or get_chroma_client()
         self.cache_service = cache_service
         self.last_cache_status = "disabled" if cache_service is None else "miss"
+        self.last_query = ""
 
     def search_knowledge(
         self,
@@ -647,13 +798,24 @@ class KnowledgeRetrievalService:
         category_id: str | None = None,
         doc_type: str | None = None,
         top_k: int = 5,
+        preferences: list[str] | None = None,
+        negative_preferences: list[str] | None = None,
     ) -> list[Citation]:
+        structured_query = build_knowledge_retrieval_query(
+            query,
+            category_id=category_id,
+            preferences=preferences,
+            negative_preferences=negative_preferences,
+        )
+        self.last_query = structured_query
         cache_key = _cache_key(
             "knowledge",
             {
-                "query": query,
+                "query": structured_query,
                 "category_id": category_id,
                 "doc_type": doc_type,
+                "preferences": preferences or [],
+                "negative_preferences": negative_preferences or [],
                 "top_k": top_k,
             },
         )
@@ -666,10 +828,10 @@ class KnowledgeRetrievalService:
         if collection_count == 0:
             return []
 
-        query_keywords = _extract_query_keywords(query, category_id=category_id)
+        query_keywords = _extract_query_keywords(structured_query, category_id=category_id)
         internal_n_results = min(max(top_k * 8, top_k + 20), collection_count)
         query_result = collection.query(
-            query_embeddings=[self.embedding_service.embed_text(query)],
+            query_embeddings=[self.embedding_service.embed_text(structured_query)],
             n_results=internal_n_results,
             include=["metadatas", "distances"],
         )

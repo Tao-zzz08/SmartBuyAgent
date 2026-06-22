@@ -25,6 +25,8 @@ class CompareContext:
     product_ids: list[str]
     source: str
     focus_preferences: list[str] = field(default_factory=list)
+    referenced_product_indices: list[int] = field(default_factory=list)
+    resolved_from_last_products: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,8 @@ class ProductComparisonService:
         product_ids: list[str],
         focus_preferences: list[str] | None = None,
         source: str = "unknown",
+        referenced_product_indices: list[int] | None = None,
+        resolved_from_last_products: bool = False,
     ) -> ProductComparisonResult:
         requested_product_ids = _unique_ordered(product_ids)
         focus = _infer_focus_preferences(query, focus_preferences or [])
@@ -66,10 +70,14 @@ class ProductComparisonService:
             "step": "product_comparison",
             "status": status,
             "source": source,
+            "compare_product_ids": requested_product_ids,
+            "referenced_product_indices": list(referenced_product_indices or []),
+            "resolved_from_last_products": resolved_from_last_products,
             "requested_product_ids": requested_product_ids,
             "returned_product_ids": returned_product_ids,
             "missing_product_ids": missing_product_ids,
             "focus_preferences": focus,
+            "comparison_product_count": len(product_candidates),
         }
 
         return ProductComparisonResult(
