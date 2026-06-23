@@ -195,6 +195,12 @@ class QueryUnderstandingResult(BaseModel):
         return self.budget.max
 
     def to_shopping_memory(self) -> ShoppingMemory:
+        last_product_ids: list[str] = []
+        if isinstance(self.shopping_memory, dict):
+            last_product_ids = _list_of_str(self.shopping_memory.get("last_product_ids"))
+        if not last_product_ids and self.intent == "compare":
+            last_product_ids = list(self.compare_product_ids)
+
         return ShoppingMemory(
             category=self.category,
             budget=ShoppingBudget(
@@ -204,7 +210,7 @@ class QueryUnderstandingResult(BaseModel):
             ),
             preferences=list(self.preferences),
             negative_preferences=list(self.negative_preferences),
-            last_product_ids=list(self.compare_product_ids),
+            last_product_ids=last_product_ids,
             last_intent=self.intent,
         )
 
@@ -395,7 +401,18 @@ class QueryUnderstandingService:
         "温和",
     ]
 
-    COMPARE_KEYWORDS = ["对比", "比较", "哪个更好", "哪个更值得"]
+    COMPARE_KEYWORDS = [
+        "对比",
+        "比较",
+        "哪个更好",
+        "哪个更值得",
+        "哪个更适合",
+        "有什么区别",
+        "这几款",
+        "这几个",
+        "第一个",
+        "第二个",
+    ]
     KNOWLEDGE_KEYWORDS = [
         "为什么",
         "怎么选",
@@ -506,11 +523,12 @@ class QueryUnderstandingService:
             context_used = getattr(rewrite_result, "context_used", {}) or {}
             resolved_ids = _list_of_str(context_used.get("resolved_product_ids"))
             referenced_ids = _list_of_str(context_used.get("referenced_product_ids"))
-            compare_product_ids = resolved_ids or referenced_ids
-            referenced_product_indices = _indices_for_product_ids(
-                referenced_ids,
-                compare_product_ids,
-            )
+            if intent == "compare":
+                compare_product_ids = resolved_ids or referenced_ids
+                referenced_product_indices = _indices_for_product_ids(
+                    referenced_ids,
+                    compare_product_ids,
+                )
             if resolved_memory.category:
                 effective_query = build_effective_query(resolved_memory)
                 if intent in {"chitchat", "clarification"}:
@@ -976,6 +994,18 @@ def merge_rule_and_llm_understanding(
     )
     preferences = [item for item in preferences if item not in negative_preferences]
 
+    if intent == "compare":
+        actionable_compare_product_ids = (
+            rule_result.compare_product_ids or llm_output.compare_product_ids
+        )
+        actionable_referenced_indices = (
+            rule_result.referenced_product_indices
+            or llm_output.referenced_product_indices
+        )
+    else:
+        actionable_compare_product_ids = []
+        actionable_referenced_indices = []
+
     current_memory = ShoppingMemory(
         category=category,
         budget=ShoppingBudget(
@@ -985,8 +1015,7 @@ def merge_rule_and_llm_understanding(
         ),
         preferences=preferences,
         negative_preferences=negative_preferences,
-        last_product_ids=llm_output.compare_product_ids
-        or rule_result.compare_product_ids
+        last_product_ids=actionable_compare_product_ids
         or previous_memory.last_product_ids,
         last_intent=intent,
     )
@@ -997,11 +1026,8 @@ def merge_rule_and_llm_understanding(
         else rule_result.effective_query
     )
     effective_query = _sanitize_effective_query(effective_query, resolved_memory.category)
-    compare_product_ids = rule_result.compare_product_ids or llm_output.compare_product_ids
-    referenced_indices = (
-        rule_result.referenced_product_indices
-        or llm_output.referenced_product_indices
-    )
+    compare_product_ids = actionable_compare_product_ids
+    referenced_indices = actionable_referenced_indices
     confidence = max(rule_result.confidence, min(llm_output.confidence, 0.85))
     need_clarification = intent == "clarification" or (
         intent == "shopping_guide" and not resolved_memory.category

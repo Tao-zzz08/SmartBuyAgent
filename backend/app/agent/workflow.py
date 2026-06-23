@@ -115,9 +115,6 @@ class AgentWorkflow:
 
 
 def _route_name_for_state(state: AgentState) -> RouteName:
-    if _has_compare_product_ids(state.compare_context):
-        return "compare"
-
     if state.need_clarification or state.intent == "clarification":
         return "clarification"
 
@@ -128,6 +125,8 @@ def _route_name_for_state(state: AgentState) -> RouteName:
         return "product_knowledge"
 
     if state.intent == "compare":
+        if _has_compare_product_ids(state.compare_context):
+            return "compare"
         return "clarification"
 
     if state.intent == "chitchat":

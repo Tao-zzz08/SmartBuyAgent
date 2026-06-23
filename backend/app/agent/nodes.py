@@ -507,6 +507,23 @@ def _append_follow_up_trace(state: AgentState, status: str, result: Any) -> None
 
 
 def _apply_structured_compare_context(state: AgentState) -> None:
+    if state.intent != "compare":
+        state.compare_product_ids = []
+        state.referenced_product_indices = []
+        state.compare_context = None
+        if state.query_result is not None and (
+            getattr(state.query_result, "compare_product_ids", None)
+            or getattr(state.query_result, "referenced_product_indices", None)
+        ):
+            state.query_result = state.query_result.model_copy(
+                update={
+                    "compare_product_ids": [],
+                    "referenced_product_indices": [],
+                }
+            )
+            state.query_understanding = state.query_result.to_trace_dict()
+        return
+
     existing_product_ids, _, _, _, _ = _compare_context_parts(state.compare_context)
     if existing_product_ids:
         return
