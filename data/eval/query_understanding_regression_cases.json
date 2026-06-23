@@ -1,18 +1,19 @@
 [
   {
     "id": "phone_budget_three_turns",
-    "description": "Phone camera recommendation with three budget updates.",
+    "description": "手机拍照需求下连续更新预算，第三轮仍应走导购检索。",
     "turns": [
       {
         "user": "预算3000，推荐一款拍照好的手机",
         "expect": {
           "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 3000,
           "preferences_contains": ["拍照"],
           "product_cards_category": "phone",
           "min_product_cards": 1,
-          "require_citations_min": 1,
+          "min_citations": 1,
           "no_generic_fallback": true
         }
       },
@@ -21,10 +22,12 @@
         "expect": {
           "is_follow_up": true,
           "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
           "preferences_contains": ["拍照"],
           "product_cards_category": "phone",
+          "forbidden_trace_steps": ["product_comparison"],
           "no_generic_fallback": true
         }
       },
@@ -33,10 +36,12 @@
         "expect": {
           "is_follow_up": true,
           "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
           "preferences_contains": ["拍照"],
           "product_cards_category": "phone",
+          "forbidden_trace_steps": ["product_comparison"],
           "no_generic_fallback": true
         }
       }
@@ -44,12 +49,13 @@
   },
   {
     "id": "phone_numeric_budget_follow_up",
-    "description": "Short numeric budget follow-up inherits phone camera context.",
+    "description": "纯数字预算追问在有手机拍照上下文时继承品类和偏好。",
     "turns": [
       {
         "user": "预算4000，推荐拍照好的手机",
         "expect": {
           "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
           "preferences_contains": ["拍照"],
@@ -60,10 +66,13 @@
         "user": "5000呢",
         "expect": {
           "is_follow_up": true,
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
           "preferences_contains": ["拍照"],
           "product_cards_category": "phone",
+          "forbidden_trace_steps": ["product_comparison"],
           "no_generic_fallback": true
         }
       }
@@ -71,11 +80,13 @@
   },
   {
     "id": "category_switch_phone_to_shoes",
-    "description": "Category switch keeps budget but drops phone-only preferences.",
+    "description": "从手机切换到鞋靴时保留预算但过滤手机专属偏好。",
     "turns": [
       {
         "user": "预算5000，推荐拍照好的手机",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
           "preferences_contains": ["拍照"],
@@ -85,21 +96,26 @@
       {
         "user": "换成鞋子看看",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "shoes",
           "budget_max": 5000,
           "preferences_not_contains": ["拍照", "续航"],
-          "product_cards_category": "shoes"
+          "product_cards_category": "shoes",
+          "forbidden_trace_steps": ["product_comparison"]
         }
       }
     ]
   },
   {
     "id": "preference_negative_update",
-    "description": "Follow-up adds battery preference and excludes Apple.",
+    "description": "多轮追问增加续航偏好并排除苹果。",
     "turns": [
       {
         "user": "预算4000，推荐拍照好的手机",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
           "preferences_contains": ["拍照"],
@@ -109,23 +125,29 @@
       {
         "user": "更看重续航，不考虑苹果",
         "expect": {
+          "is_follow_up": true,
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
           "preferences_contains": ["拍照", "续航"],
           "negative_preferences_contains": ["苹果"],
           "product_cards_category": "phone",
-          "product_cards_exclude_terms": ["苹果", "Apple", "iPhone"]
+          "product_cards_forbidden_terms": ["苹果", "Apple", "iPhone"],
+          "forbidden_trace_steps": ["product_comparison"]
         }
       }
     ]
   },
   {
     "id": "llm_fallback_ambiguous_shoes",
-    "description": "Ambiguous shoes follow-up uses validated LLM slot fallback.",
+    "description": "鞋靴长尾追问通过受校验的 LLM slot fallback 补齐预算和轻便偏好。",
     "turns": [
       {
         "user": "预算800，推荐通勤鞋",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "shoes",
           "budget_max": 800,
           "preferences_contains": ["通勤"],
@@ -136,6 +158,8 @@
         "user": "那贵一点但别太重的呢",
         "expect": {
           "source": "mixed",
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "shoes",
           "budget_max": 1200,
           "preferences_contains": ["通勤", "轻便"],
@@ -146,11 +170,13 @@
   },
   {
     "id": "compare_first_second",
-    "description": "Compare first and second products from previous real recommendations.",
+    "description": "第一个和第二个比较必须解析到上一轮真实推荐商品。",
     "turns": [
       {
         "user": "预算5000，推荐拍照好的手机",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
           "preferences_contains": ["拍照"],
@@ -162,6 +188,7 @@
         "user": "第一个和第二个哪个好",
         "expect": {
           "intent": "compare",
+          "route": "compare",
           "referenced_product_indices": [1, 2],
           "compare_product_ids_count": 2,
           "compare_product_ids_from_previous_turn": true,
@@ -171,12 +198,64 @@
     ]
   },
   {
+    "id": "budget_follow_up_should_not_route_to_compare",
+    "description": "预算追问即使有上一轮商品记忆，也不能误路由到商品比较。",
+    "turns": [
+      {
+        "user": "预算3000，推荐一款拍照好的手机",
+        "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
+          "category": "phone",
+          "budget_max": 3000,
+          "preferences_contains": ["拍照"],
+          "product_cards_category": "phone",
+          "min_product_cards": 2
+        }
+      },
+      {
+        "user": "预算增加到4000呢",
+        "expect": {
+          "is_follow_up": true,
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
+          "category": "phone",
+          "budget_max": 4000,
+          "preferences_contains": ["拍照"],
+          "compare_product_ids": [],
+          "referenced_product_indices": [],
+          "product_cards_category": "phone",
+          "forbidden_trace_steps": ["product_comparison"],
+          "no_generic_fallback": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "compare_without_previous_products_clarifies",
+    "description": "没有上一轮商品时不能凭空比较第一个和第二个。",
+    "turns": [
+      {
+        "user": "第一个和第二个哪个好",
+        "expect": {
+          "route": "clarification",
+          "need_clarification": true,
+          "compare_product_ids": [],
+          "product_cards_count": 0,
+          "forbidden_trace_steps": ["product_comparison"]
+        }
+      }
+    ]
+  },
+  {
     "id": "skincare_medical_safety",
-    "description": "Skincare query with medical wording is normalized to safe care terms.",
+    "description": "护肤 query 中的医疗化表达必须被安全改写。",
     "turns": [
       {
         "user": "预算300，推荐能治疗痘痘的护肤品",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "skincare",
           "budget_max": 300,
           "forbidden_answer_terms": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病"],
@@ -190,17 +269,19 @@
   },
   {
     "id": "boundary_product_cards_citations",
-    "description": "Product cards and citations remain retrieval-grounded and non-transactional.",
+    "description": "商品卡片和 citations 必须保持检索来源边界且无交易能力越界。",
     "turns": [
       {
         "user": "预算3000，推荐一款拍照好的手机",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 3000,
           "preferences_contains": ["拍照"],
           "product_cards_category": "phone",
           "min_product_cards": 1,
-          "require_citations_min": 1,
+          "min_citations": 1,
           "product_cards_have_required_fields": true,
           "citations_have_required_fields": true,
           "no_purchase_boundary_terms": true
@@ -210,11 +291,13 @@
   },
   {
     "id": "stream_non_stream_consistency",
-    "description": "Budget follow-up remains consistent between normal chat and SSE stream.",
+    "description": "预算追问在普通 chat 和 SSE stream 下的结构化理解应一致。",
     "turns": [
       {
         "user": "预算3000，推荐一款拍照好的手机",
         "expect": {
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 3000,
           "preferences_contains": ["拍照"],
@@ -225,10 +308,13 @@
         "user": "增加到5000呢",
         "expect": {
           "is_follow_up": true,
+          "intent": "shopping_guide",
+          "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
           "preferences_contains": ["拍照"],
           "product_cards_category": "phone",
+          "forbidden_trace_steps": ["product_comparison"],
           "no_generic_fallback": true
         }
       }

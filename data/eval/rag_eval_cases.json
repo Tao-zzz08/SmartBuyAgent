@@ -1,0 +1,141 @@
+[
+  {
+    "id": "phone_camera_knowledge_grounded_answer",
+    "type": "rag_answer",
+    "description": "手机拍照知识回答应由 citation 支撑。",
+    "query": "手机拍照主要看哪些参数？",
+    "expected_category": "phone",
+    "expect": {
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "citation_keywords_any": ["传感器", "光圈", "防抖", "影像", "算法"],
+      "answer_must_include_any": ["传感器", "防抖", "影像"],
+      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
+      "product_cards_allowed": false
+    }
+  },
+  {
+    "id": "phone_battery_knowledge_grounded_answer",
+    "type": "rag_answer",
+    "description": "手机续航知识回答应引用电池、快充和功耗相关知识。",
+    "query": "手机续航主要看什么？",
+    "expected_category": "phone",
+    "expect": {
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "citation_keywords_any": ["电池容量", "快充", "功耗", "续航"],
+      "answer_must_include_any": ["电池容量", "快充", "功耗", "续航"],
+      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
+      "product_cards_allowed": false
+    }
+  },
+  {
+    "id": "shoes_size_grounded_answer",
+    "type": "rag_answer",
+    "description": "鞋靴尺码知识回答应由尺码/脚长/试穿 citation 支撑。",
+    "query": "鞋子尺码应该怎么选？",
+    "expected_category": "shoes",
+    "expect": {
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "citation_keywords_any": ["尺码", "脚长", "试穿", "鞋楦"],
+      "answer_must_include_any": ["尺码", "脚长", "试穿"],
+      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
+      "product_cards_allowed": false
+    }
+  },
+  {
+    "id": "shoes_anti_slip_grounded_answer",
+    "type": "rag_answer",
+    "description": "通勤鞋防滑回答应由鞋底/纹路/抓地 citation 支撑。",
+    "query": "通勤鞋防滑主要看什么？",
+    "expected_category": "shoes",
+    "expect": {
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "citation_keywords_any": ["鞋底", "纹路", "防滑", "抓地"],
+      "answer_must_include_any": ["鞋底", "防滑", "抓地"],
+      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
+      "product_cards_allowed": false
+    }
+  },
+  {
+    "id": "skincare_sensitive_grounded_answer",
+    "type": "rag_answer",
+    "description": "敏感肌护肤回答应有温和/保湿 citation，且不能出现医疗承诺。",
+    "query": "敏感肌护肤应该注意什么？",
+    "expected_category": "skincare",
+    "expect": {
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "citation_keywords_any": ["温和", "保湿", "刺激", "敏感肌"],
+      "answer_must_include_any": ["温和", "保湿", "敏感肌"],
+      "answer_forbidden": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病", "立即购买", "购买链接"],
+      "product_cards_allowed": false
+    }
+  },
+  {
+    "id": "skincare_acne_safety_rag",
+    "type": "rag_answer",
+    "description": "含治疗痘痘表达的护肤请求必须安全改写并保持 citation 支撑。",
+    "query": "预算300，推荐能治疗痘痘的护肤品",
+    "expected_category": "skincare",
+    "expect": {
+      "category": "skincare",
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "answer_forbidden": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病"],
+      "effective_query_forbidden": ["治疗", "治愈", "药效"],
+      "knowledge_query_forbidden": ["治疗", "治愈", "药效"],
+      "answer_must_include_any": ["清爽", "控油", "温和", "日常护理"],
+      "expected_product_cards_min": 1,
+      "product_cards_category": "skincare"
+    }
+  },
+  {
+    "id": "citation_must_come_from_knowledge_chunks",
+    "type": "rag_answer",
+    "description": "citation 必须是结构化知识检索结果，而不是回答里的伪引用措辞。",
+    "query": "敏感肌护肤应该注意什么？",
+    "expected_category": "skincare",
+    "expect": {
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "citation_source": "knowledge_retrieval",
+      "citation_keywords_any": ["温和", "保湿", "敏感肌"],
+      "forbid_fake_citation_phrases": ["根据资料显示", "参考文献", "来源链接"],
+      "answer_forbidden": ["治疗", "治愈", "药效", "处方", "医学修复"]
+    }
+  },
+  {
+    "id": "unknown_knowledge_should_not_fabricate",
+    "type": "rag_answer",
+    "description": "未知成分临床治愈率问题不能编造医疗结论。",
+    "query": "请告诉我某某不存在成分对皮肤的临床治愈率",
+    "expected_category": "skincare",
+    "expect": {
+      "expected_behavior": "clarify_or_safe_answer",
+      "answer_forbidden": ["治愈率为", "临床证明", "百分之", "药效", "处方", "治疗", "治愈"],
+      "allow_no_citations": true,
+      "must_not_fabricate": true,
+      "product_cards_allowed": false
+    }
+  },
+  {
+    "id": "recommendation_reason_must_be_grounded",
+    "type": "rag_answer",
+    "description": "推荐拍照手机并说明理由时，商品卡片来自检索，理由由知识引用支撑。",
+    "query": "预算4000，推荐拍照好的手机，并说明为什么适合拍照",
+    "expected_category": "phone",
+    "expect": {
+      "category": "phone",
+      "expected_product_cards_min": 1,
+      "product_cards_category": "phone",
+      "min_citations": 1,
+      "citation_must_have_fields": ["chunk_id", "source", "text"],
+      "answer_must_include_any": ["拍照", "影像", "防抖", "传感器"],
+      "citations_must_support_any": ["拍照", "影像", "防抖", "传感器"],
+      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"]
+    }
+  }
+]

@@ -12,6 +12,12 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 DEFAULT_CASES_PATH = (
     PROJECT_ROOT / "data" / "eval" / "query_understanding_regression_cases.json"
 )
+SUITE_CASES_PATHS = {
+    "query_understanding": DEFAULT_CASES_PATH,
+    "multiturn": PROJECT_ROOT / "data" / "eval" / "multiturn_eval_cases.json",
+    "rag": PROJECT_ROOT / "data" / "eval" / "rag_eval_cases.json",
+    "retrieval": PROJECT_ROOT / "data" / "eval" / "retrieval_eval_cases.json",
+}
 
 
 EvalCase = Dict[str, Any]
@@ -52,8 +58,14 @@ def load_eval_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[EvalCase]:
         cases = json.load(file)
 
     if not isinstance(cases, list):
-        raise ValueError("Query understanding eval cases file must contain a JSON list")
+        raise ValueError("Eval cases file must contain a JSON list")
     return cases
+
+
+def load_suite_cases(suite: str) -> list[EvalCase]:
+    if suite not in SUITE_CASES_PATHS:
+        raise ValueError(f"Unknown eval suite: {suite}")
+    return load_eval_cases(SUITE_CASES_PATHS[suite])
 
 
 def run_eval(
@@ -80,11 +92,42 @@ def run_eval(
     }
 
 
+def run_suite(
+    suite: str,
+    *,
+    client: Any | None = None,
+    case_id: str | None = None,
+    mode: str = "chat",
+) -> dict[str, Any]:
+    if suite == "all":
+        suite_outputs = {
+            name: run_suite(name, client=client, case_id=None, mode=mode)
+            for name in ["query_understanding", "multiturn", "rag"]
+        }
+        retrieval_output = _run_retrieval_suite(case_id=None)
+        suite_outputs["retrieval"] = retrieval_output
+        return {
+            "suites": suite_outputs,
+            "summary": _summarize_suite_outputs(suite_outputs),
+        }
+
+    if suite == "retrieval":
+        return _run_retrieval_suite(case_id=case_id)
+
+    return run_eval(
+        load_suite_cases(suite),
+        client=client,
+        case_id=case_id,
+        mode=mode,
+    )
+
+
 def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
     session_id: str | None = None
     turn_results: list[dict[str, Any]] = []
+    turns = _case_turns(case)
 
-    for turn_index, turn in enumerate(case.get("turns", []), start=1):
+    for turn_index, turn in enumerate(turns, start=1):
         query = str(turn["user"])
         turn_mode = str(turn.get("mode") or mode)
         response = _post_chat_turn(
@@ -116,10 +159,7 @@ def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
             "turn_index": turn_result["turn_index"],
             "user": turn_result["user"],
             "reasons": turn_result["failure_reasons"],
-            "expected": (case["turns"][turn_result["turn_index"] - 1]).get(
-                "expect",
-                {},
-            ),
+            "expected": turns[turn_result["turn_index"] - 1].get("expect", {}),
             "actual_query_understanding": turn_result["query_understanding"],
             "actual_product_cards": product_cards_summary(
                 turn_result["response"].get("product_cards", [])
@@ -137,6 +177,30 @@ def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
         "turns": turn_results,
         "failure_reasons": failure_reasons,
     }
+
+
+def _case_turns(case: EvalCase) -> list[dict[str, Any]]:
+    turns = case.get("turns")
+    if isinstance(turns, list) and turns:
+        normalized_turns: list[dict[str, Any]] = []
+        for turn in turns:
+            if isinstance(turn, dict):
+                normalized_turns.append(_normalize_turn_expect(case, turn))
+            else:
+                normalized_turns.append(_normalize_turn_expect(case, {"user": str(turn), "expect": {}}))
+        return normalized_turns
+    if "query" in case:
+        return [_normalize_turn_expect(case, {"user": case["query"], "expect": case.get("expect", {})})]
+    return []
+
+
+def _normalize_turn_expect(case: EvalCase, turn: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(turn)
+    expect = dict(normalized.get("expect") or {})
+    if case.get("expected_category") and "category" not in expect:
+        expect["category"] = case["expected_category"]
+    normalized["expect"] = expect
+    return normalized
 
 
 def evaluate_turn(
@@ -161,6 +225,8 @@ def evaluate_turn(
         expected,
         failure_reasons,
     )
+    _check_route(response, expected, failure_reasons)
+    _check_trace_steps(response, expected, failure_reasons)
     _check_product_cards(
         response.get("product_cards", []),
         expected,
@@ -170,6 +236,7 @@ def evaluate_turn(
     _check_citations(response.get("citations", []), expected, failure_reasons)
     _check_comparison(response, query_understanding, expected, failure_reasons, previous_turn_result)
     _check_safety_boundaries(response, query_understanding, expected, failure_reasons)
+    _check_answer_groundedness(response, expected, failure_reasons)
     return failure_reasons
 
 
@@ -190,7 +257,55 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
     }
 
 
+def _run_retrieval_suite(case_id: str | None = None) -> dict[str, Any]:
+    from eval_retrieval import load_eval_cases as load_retrieval_cases
+    from eval_retrieval import run_default_eval
+
+    cases = load_retrieval_cases(SUITE_CASES_PATHS["retrieval"])
+    if case_id is not None:
+        cases = [case for case in cases if case.get("id") == case_id]
+        if not cases:
+            raise ValueError(f"Unknown retrieval eval case id: {case_id}")
+    return run_default_eval(cases)
+
+
+def _summarize_suite_outputs(outputs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    total_cases = 0
+    passed_cases = 0
+    failed_cases = 0
+    failed_case_ids: list[str] = []
+    for suite, output in outputs.items():
+        summary = output.get("summary", {})
+        total_cases += int(summary.get("total_cases", 0))
+        passed_cases += int(summary.get("passed_cases", 0))
+        failed_cases += int(summary.get("failed_cases", 0))
+        failed_case_ids.extend(
+            f"{suite}:{case_id}" for case_id in summary.get("failed_case_ids", [])
+        )
+    return {
+        "total_cases": total_cases,
+        "passed_cases": passed_cases,
+        "failed_cases": failed_cases,
+        "failed_case_ids": failed_case_ids,
+    }
+
+
 def print_report(output: dict[str, Any]) -> None:
+    if "suites" in output:
+        print("SmartBuyAgent Eval Suites")
+        print("=========================")
+        for suite, suite_output in output["suites"].items():
+            summary = suite_output.get("summary", {})
+            print(
+                f"{suite}: {summary.get('passed_cases', 0)}/"
+                f"{summary.get('total_cases', 0)} cases passed"
+            )
+        print()
+        print("summary:")
+        for key, value in output["summary"].items():
+            print(f"{key}: {value}")
+        return
+
     print("QueryUnderstanding Regression Eval")
     print("==================================")
     summary = output["summary"]
@@ -235,6 +350,30 @@ def trace_step(response: dict[str, Any], step_name: str) -> dict[str, Any] | Non
     return None
 
 
+def _trace_step_names(response: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for step in response.get("trace", []) or []:
+        if step.get("step"):
+            names.add(str(step["step"]))
+        if step.get("node"):
+            names.add(str(step["node"]))
+    return names
+
+
+def _route_from_response(response: dict[str, Any]) -> str | None:
+    route_step = trace_step(response, "route_by_intent") or {}
+    if route_step.get("route"):
+        return str(route_step["route"])
+    query_understanding = query_understanding_from_response(response)
+    intent = query_understanding.get("intent")
+    if intent == "compare":
+        if trace_step(response, "product_comparison") is not None:
+            return "compare"
+        if query_understanding.get("need_clarification"):
+            return "clarification"
+    return str(intent) if intent else None
+
+
 def product_cards_summary(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -245,6 +384,38 @@ def product_cards_summary(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for card in cards
     ]
+
+
+def _citation_field(citation: dict[str, Any], field: str) -> Any:
+    aliases = {
+        "source": ["source", "source_file", "source_url"],
+        "text": ["text", "content", "content_preview"],
+    }
+    for candidate in aliases.get(field, [field]):
+        value = citation.get(candidate)
+        if value not in {None, ""}:
+            return value
+    return None
+
+
+def _citations_text(citations: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for citation in citations:
+        for field in [
+            "chunk_id",
+            "title",
+            "section",
+            "section_path",
+            "source",
+            "source_file",
+            "text",
+            "content",
+            "content_preview",
+        ]:
+            value = citation.get(field)
+            if value not in {None, ""}:
+                parts.append(str(value))
+    return "\n".join(parts)
 
 
 def _check_query_understanding(
@@ -288,6 +459,53 @@ def _check_query_understanding(
                 f"expected {expected['referenced_product_indices']!r}, got {actual_indices!r}"
             )
 
+    if "compare_product_ids" in expected:
+        actual_ids = [str(value) for value in actual.get("compare_product_ids") or []]
+        expected_ids = [str(value) for value in expected["compare_product_ids"]]
+        if actual_ids != expected_ids:
+            failure_reasons.append(
+                f"compare_product_ids mismatch: expected {expected_ids!r}, got {actual_ids!r}"
+            )
+
+    if "need_clarification" in expected and bool(actual.get("need_clarification")) != bool(
+        expected["need_clarification"]
+    ):
+        failure_reasons.append(
+            "need_clarification mismatch: "
+            f"expected {expected['need_clarification']!r}, got {actual.get('need_clarification')!r}"
+        )
+
+
+def _check_route(
+    response: dict[str, Any],
+    expected: dict[str, Any],
+    failure_reasons: list[str],
+) -> None:
+    if "route" not in expected:
+        return
+
+    actual_route = _route_from_response(response)
+    if actual_route != expected["route"]:
+        failure_reasons.append(
+            f"route mismatch: expected {expected['route']!r}, got {actual_route!r}"
+        )
+
+
+def _check_trace_steps(
+    response: dict[str, Any],
+    expected: dict[str, Any],
+    failure_reasons: list[str],
+) -> None:
+    steps = _trace_step_names(response)
+
+    for step in expected.get("required_trace_steps") or []:
+        if step not in steps:
+            failure_reasons.append(f"missing trace step: {step}")
+
+    for step in expected.get("forbidden_trace_steps") or []:
+        if step in steps:
+            failure_reasons.append(f"unexpected trace step: {step}")
+
 
 def _check_product_cards(
     cards: list[dict[str, Any]],
@@ -296,10 +514,20 @@ def _check_product_cards(
     previous_turn_result: dict[str, Any] | None,
 ) -> None:
     min_product_cards = expected.get("min_product_cards")
+    if min_product_cards is None:
+        min_product_cards = expected.get("expected_product_cards_min")
     if min_product_cards is not None and len(cards) < int(min_product_cards):
         failure_reasons.append(
             f"not enough product_cards: expected at least {min_product_cards}, got {len(cards)}"
         )
+
+    if "product_cards_count" in expected and len(cards) != int(expected["product_cards_count"]):
+        failure_reasons.append(
+            f"product_cards count mismatch: expected {expected['product_cards_count']}, got {len(cards)}"
+        )
+
+    if expected.get("product_cards_allowed") is False and cards:
+        failure_reasons.append("product_cards are not allowed for this case")
 
     expected_category = expected.get("product_cards_category")
     if expected_category and cards:
@@ -316,6 +544,20 @@ def _check_product_cards(
     for term in expected.get("product_cards_exclude_terms") or []:
         if term and term.lower() in _cards_text(cards).lower():
             failure_reasons.append(f"product_cards contain excluded term: {term}")
+    for term in expected.get("product_cards_forbidden_terms") or []:
+        if term and term.lower() in _cards_text(cards).lower():
+            failure_reasons.append(f"product_cards contain forbidden term: {term}")
+
+    max_price = expected.get("product_cards_max_price")
+    if max_price is not None:
+        over_budget = [
+            card.get("product_id")
+            for card in cards
+            if _numeric_or_none(card.get("price")) is not None
+            and _numeric_or_none(card.get("price")) > float(max_price)
+        ]
+        if over_budget:
+            failure_reasons.append(f"product_cards exceed max price: {over_budget}")
 
     if expected.get("product_cards_subset_of_previous_turn") and previous_turn_result:
         previous_ids = set(_product_ids(previous_turn_result["response"]))
@@ -342,22 +584,47 @@ def _check_citations(
     failure_reasons: list[str],
 ) -> None:
     min_citations = expected.get("require_citations_min")
+    if min_citations is None:
+        min_citations = expected.get("min_citations")
     if min_citations is not None and len(citations) < int(min_citations):
         failure_reasons.append(
             f"not enough citations: expected at least {min_citations}, got {len(citations)}"
         )
 
+    required_fields: list[str] = []
     if expected.get("citations_have_required_fields"):
+        required_fields.extend(["chunk_id", "content_preview", "score"])
+    required_fields.extend(expected.get("citation_must_have_fields") or [])
+    if required_fields:
         for citation in citations:
             missing = [
                 field
-                for field in ["chunk_id", "content_preview", "score"]
-                if citation.get(field) in {None, ""}
+                for field in required_fields
+                if _citation_field(citation, field) in {None, ""}
             ]
             if missing:
                 failure_reasons.append(
                     f"citation {citation.get('chunk_id')} missing fields: {missing}"
                 )
+
+    _expect_text_contains_any(
+        _citations_text(citations),
+        expected.get("citation_keywords_any") or [],
+        "citations",
+        failure_reasons,
+    )
+    _expect_text_contains_any(
+        _citations_text(citations),
+        expected.get("citations_must_support_any") or [],
+        "citations",
+        failure_reasons,
+    )
+
+    citation_source = expected.get("citation_source")
+    if citation_source == "knowledge_retrieval" and citations:
+        for citation in citations:
+            if not _citation_field(citation, "chunk_id"):
+                failure_reasons.append("citation missing chunk_id for knowledge retrieval source")
 
 
 def _check_comparison(
@@ -406,7 +673,13 @@ def _check_safety_boundaries(
             if phrase in answer:
                 failure_reasons.append("answer fell back to generic welcome message")
 
-    _expect_no_terms(answer, expected.get("forbidden_answer_terms") or [], "answer", failure_reasons)
+    _expect_no_terms(
+        answer,
+        (expected.get("forbidden_answer_terms") or [])
+        + (expected.get("answer_forbidden") or []),
+        "answer",
+        failure_reasons,
+    )
     _expect_no_terms(
         effective_query,
         expected.get("forbidden_effective_query_terms") or [],
@@ -431,6 +704,31 @@ def _check_safety_boundaries(
         for term in PURCHASE_BOUNDARY_TERMS:
             if term in payload_text:
                 failure_reasons.append(f"purchase boundary term found: {term}")
+
+    _expect_no_terms(
+        answer,
+        expected.get("forbid_fake_citation_phrases") or [],
+        "answer",
+        failure_reasons,
+    )
+
+
+def _check_answer_groundedness(
+    response: dict[str, Any],
+    expected: dict[str, Any],
+    failure_reasons: list[str],
+) -> None:
+    answer = str(response.get("answer") or "")
+    _expect_text_contains_any(
+        answer,
+        expected.get("answer_must_include_any") or [],
+        "answer",
+        failure_reasons,
+    )
+
+    if expected.get("must_not_fabricate"):
+        suspicious_terms = ["治愈率为", "临床证明", "百分之", "参考文献", "真实购买链接"]
+        _expect_no_terms(answer, suspicious_terms, "answer", failure_reasons)
 
 
 def _post_chat_turn(
@@ -540,6 +838,25 @@ def _expect_no_terms(
             failure_reasons.append(f"{label} contains forbidden term: {term}")
 
 
+def _expect_text_contains_any(
+    text: str,
+    terms: list[str],
+    label: str,
+    failure_reasons: list[str],
+) -> None:
+    if terms and not any(term and term in text for term in terms):
+        failure_reasons.append(f"{label} missing any expected term: {terms}")
+
+
+def _numeric_or_none(value: Any) -> float | None:
+    try:
+        if value in {None, ""}:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _card_matches_category(card: dict[str, Any], category: str) -> bool:
     product_id = str(card.get("product_id") or "").lower()
     title = str(card.get("title") or "").lower()
@@ -590,18 +907,26 @@ def _failure_reason_counts(results: list[EvalResult]) -> dict[str, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run SmartBuyAgent query-understanding regression eval."
+        description="Run SmartBuyAgent eval suites."
+    )
+    parser.add_argument(
+        "--suite",
+        choices=["query_understanding", "multiturn", "retrieval", "rag", "all"],
+        default="query_understanding",
     )
     parser.add_argument("--cases", default=str(DEFAULT_CASES_PATH))
     parser.add_argument("--case", default=None)
     parser.add_argument("--mode", choices=["chat", "stream"], default="chat")
     args = parser.parse_args()
 
-    output = run_eval(
-        load_eval_cases(args.cases),
-        case_id=args.case,
-        mode=args.mode,
-    )
+    if args.cases != str(DEFAULT_CASES_PATH):
+        output = run_eval(
+            load_eval_cases(args.cases),
+            case_id=args.case,
+            mode=args.mode,
+        )
+    else:
+        output = run_suite(args.suite, case_id=args.case, mode=args.mode)
     print_report(output)
     if output["summary"]["failed_cases"]:
         raise SystemExit(1)

@@ -10,9 +10,9 @@ This directory contains project maintenance, seed import, indexing, and evaluati
 - `import_real_products.py`: imports processed real-product JSONL into products, product tags, and product attributes with optional upsert/dry-run.
 - `import_docs.py`: imports Markdown knowledge documents and splits them into `document_chunks`.
 - `rebuild_index.py`: rebuilds Chroma indexes for `product_text` and `knowledge_docs`.
-- `eval_retrieval.py`: runs lightweight product and knowledge retrieval evaluation cases.
-- `eval_multiturn.py`: runs lightweight multiturn rewrite and comparison evaluation cases.
-- `run_query_understanding_eval.py`: runs QueryUnderstanding 2.0 regression cases for multi-turn shopping constraints, safety boundaries, and chat/stream trace consistency.
+- `eval_retrieval.py`: runs product and knowledge retrieval eval cases with structured filters and soft quality assertions.
+- `eval_multiturn.py`: legacy multiturn runner for full API checks.
+- `run_query_understanding_eval.py`: runs the unified eval suites with `--suite query_understanding`, `--suite multiturn`, `--suite retrieval`, `--suite rag`, or `--suite all`.
 
 Default local indexing uses mock embedding. OpenAI-compatible embedding can be enabled through `.env`, and indexes must be rebuilt after changing provider, model, or dimension.
 

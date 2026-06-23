@@ -63,41 +63,94 @@ This validates:
 - Feedback API client
 - Chat Workspace composition
 
-## 3. Retrieval and Multiturn Evaluation
+## 3. Evaluation Suites
 
-Retrieval cases live in:
-
-```text
-data/eval/retrieval_eval_cases.json
-```
-
-Multiturn cases live in:
-
-```text
-data/eval/multiturn_eval_cases.json
-```
-
-QueryUnderstanding 2.0 regression cases live in:
+SmartBuyAgent now keeps four eval files with separate responsibilities:
 
 ```text
 data/eval/query_understanding_regression_cases.json
+data/eval/retrieval_eval_cases.json
+data/eval/rag_eval_cases.json
+data/eval/multiturn_eval_cases.json
 ```
+
+### QueryUnderstanding Eval
+
+`query_understanding_regression_cases.json` validates structured query
+understanding and routing:
+
+- intent, route, category, budget, preferences, and negative preferences
+- structured memory merge for budget updates and short numeric follow-ups
+- category switching and incompatible preference filtering
+- validated LLM slot fallback for ambiguous follow-ups
+- product comparison references resolved from previous real product cards
+- the regression where budget follow-ups must not route to product comparison
+- no previous products means ordinal comparison must clarify instead of
+  fabricating product references
+
+### Retrieval Eval
+
+`retrieval_eval_cases.json` is retrieval-focused, not final answer-focused. It
+uses structured filters and soft assertions rather than depending primarily on
+fixed product IDs:
+
+- product category compliance
+- budget compliance
+- positive preference keyword matching
+- negative preference / forbidden term violations
+- minimum product result count
+- knowledge chunk keyword hit rate
+- forbidden term violations in retrieved chunks
+
+### RAG Eval
+
+`rag_eval_cases.json` validates grounded final answers:
+
+- minimum citation count
+- citation fields such as `chunk_id`, source, and text/content preview
+- citation keywords that support the answer
+- answer terms that should be present
+- forbidden purchase, payment, and shopping-cart language
+- skincare medical-claim safety boundaries
+- unknown knowledge questions should clarify or answer safely instead of
+  fabricating clinical conclusions
+
+### Multiturn Eval
+
+`multiturn_eval_cases.json` validates complete multi-turn shopping flows:
+
+- budget ladders across several turns
+- preference refinement and negative preferences
+- category switch chains across phone, shoes, and skincare
+- recommendation followed by comparison
+- comparison followed by a return to shopping-guide retrieval
+- stream and non-stream consistency for structured query understanding
 
 Run:
 
 ```bash
 cd backend
+python ../scripts/run_query_understanding_eval.py --suite query_understanding
+python ../scripts/run_query_understanding_eval.py --suite multiturn
+python ../scripts/run_query_understanding_eval.py --suite rag
+python ../scripts/run_query_understanding_eval.py --suite retrieval
+python ../scripts/run_query_understanding_eval.py --suite all
 python ../scripts/eval_retrieval.py
-python ../scripts/eval_multiturn.py
-python ../scripts/run_query_understanding_eval.py
 ```
 
-The QueryUnderstanding regression suite covers multi-turn budget updates, numeric
-follow-ups, category switching, preference and negative-preference updates,
-validated LLM slot fallback, product comparison references, skincare safety
-boundaries, product card / citation constraints, and chat-vs-stream consistency.
+Pytest coverage includes schema validation and fake-client runner checks:
 
-These checks are lightweight workflow and rule assertions. They are not final business metrics.
+```bash
+cd backend
+pytest tests/test_eval_cases_schema.py
+pytest tests/test_query_understanding_regression_eval.py
+pytest tests/test_retrieval_eval_cases.py
+pytest tests/test_rag_eval_cases.py
+pytest tests/test_multiturn_eval_cases.py
+```
+
+These checks are deterministic regression and boundary assertions. They do not
+use external LLM APIs, external network calls, or production databases.
 
 ## 4. Data Import Evaluation
 

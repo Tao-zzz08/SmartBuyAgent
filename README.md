@@ -693,6 +693,10 @@ Current evaluation coverage includes:
 - Chat API
 - Chat SSE API
 - AgentWorkflow
+- QueryUnderstanding regression eval for structured intent, route, memory merge, and comparison references
+- Retrieval eval for category, budget, positive preference, and negative preference constraints
+- RAG eval for grounded answers, real citations, unknown-knowledge safety, and skincare safety boundaries
+- Multiturn eval for budget ladders, category switching, preference updates, comparison, and chat/stream consistency
 - Product retrieval
 - Knowledge retrieval
 - Follow-up rewrite
