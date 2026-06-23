@@ -28,6 +28,23 @@ def test_rag_eval_cases_include_groundedness_and_safety_cases() -> None:
     } <= {case["id"] for case in cases}
 
 
+def test_rag_eval_cases_have_meaningful_expectations() -> None:
+    cases = load_suite_cases("rag")
+
+    for case in cases:
+        expect = case["expect"]
+        assert "answer_forbidden" in expect, case["id"]
+        assert (
+            "citation_must_have_fields" in expect
+            or expect.get("allow_no_citations") is True
+        ), case["id"]
+        assert (
+            "answer_must_include_any" in expect
+            or "citation_keywords_any" in expect
+            or expect.get("must_not_fabricate") is True
+        ), case["id"]
+
+
 def test_core_rag_eval_cases_pass_with_fake_client() -> None:
     cases = [
         case
