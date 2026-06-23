@@ -1,0 +1,84 @@
+{
+  "query_understanding_cases": [
+    {
+      "id": "phone_budget_three_turns_smoke",
+      "turns": [
+        "预算3000，推荐一款拍照好的手机",
+        "我的预算增加到4000呢",
+        "增加到5000呢"
+      ],
+      "expect_last_turn": {
+        "intent": "shopping_guide",
+        "category": "phone",
+        "budget_max": 5000,
+        "preferences_contains": ["拍照"],
+        "is_follow_up": true,
+        "source": "rule",
+        "llm_fallback_attempted": false,
+        "effective_query_must_include": ["5000", "手机", "拍照"]
+      }
+    }
+  ],
+  "product_retrieval_cases": [
+    {
+      "id": "structured_phone_camera_without_apple_smoke",
+      "query": "预算5000，推荐拍照好的手机，不考虑苹果",
+      "filters": {
+        "category": "phone",
+        "budget_max": 5000,
+        "preferences": ["拍照"],
+        "negative_preferences": ["苹果"]
+      },
+      "catalog": [
+        {
+          "id": "phone_ok",
+          "category": "phone",
+          "title": "小米影像手机",
+          "brand": "小米",
+          "price": 3999,
+          "tags": ["拍照", "影像"],
+          "description": "适合拍照和日常使用的手机"
+        },
+        {
+          "id": "phone_over_budget",
+          "category": "phone",
+          "title": "高端影像旗舰手机",
+          "brand": "华为",
+          "price": 5999,
+          "tags": ["拍照", "影像"],
+          "description": "拍照能力强但超过预算"
+        },
+        {
+          "id": "shoe_wrong_category",
+          "category": "shoes",
+          "title": "通勤轻便鞋",
+          "brand": "安踏",
+          "price": 499,
+          "tags": ["通勤", "轻便"],
+          "description": "适合通勤穿着的鞋靴"
+        },
+        {
+          "id": "phone_negative_brand",
+          "category": "phone",
+          "title": "苹果拍照手机",
+          "brand": "Apple",
+          "price": 3999,
+          "tags": ["拍照", "影像"],
+          "description": "苹果品牌手机，应被负向偏好过滤或降权"
+        }
+      ],
+      "expect": {
+        "must_include_product_ids": ["phone_ok"],
+        "must_exclude_product_ids": ["phone_over_budget", "shoe_wrong_category"],
+        "negative_brand_product_ids": ["phone_negative_brand"],
+        "preferred_first_product_id": "phone_ok",
+        "structured_filters": {
+          "category": "phone",
+          "budget_max": 5000,
+          "preferences": ["拍照"],
+          "negative_preferences": ["苹果"]
+        }
+      }
+    }
+  ]
+}

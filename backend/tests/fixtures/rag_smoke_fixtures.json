@@ -1,0 +1,69 @@
+{
+  "cases": [
+    {
+      "id": "phone_camera_grounded_smoke",
+      "description": "手机拍照知识问答应基于真实知识 chunk 返回 citation 和 grounded answer",
+      "query": "手机拍照主要看哪些参数？",
+      "knowledge_query": "手机 拍照 参数 选购建议",
+      "category": "phone",
+      "preferences": ["拍照"],
+      "document": {
+        "doc_id": "doc_phone_camera_smoke",
+        "title": "手机拍照知识",
+        "source_file": "knowledge/phone/camera.md",
+        "category": "phone",
+        "doc_type": "guide"
+      },
+      "chunks": [
+        {
+          "chunk_id": "phone_camera_001",
+          "section": "拍照参数",
+          "source": "knowledge/phone/camera.md",
+          "category": "phone",
+          "text": "手机拍照通常需要关注传感器尺寸、光圈、防抖能力和影像算法。传感器和防抖会影响暗光拍摄和成片稳定性。"
+        }
+      ],
+      "answer_template": "手机拍照可以重点关注传感器、防抖、光圈和影像算法，这些因素会影响暗光表现、稳定性和成片质量。",
+      "expect": {
+        "min_citations": 1,
+        "expected_chunk_ids": ["phone_camera_001"],
+        "answer_must_include_any": ["传感器", "防抖", "影像", "光圈"],
+        "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
+        "citation_must_have_fields": ["chunk_id", "source_file", "content_preview", "document_id"]
+      }
+    },
+    {
+      "id": "skincare_acne_safety_smoke",
+      "description": "护肤 RAG smoke 应避免医疗承诺并返回安全 citation",
+      "query": "预算300，推荐能治疗痘痘的护肤品",
+      "category": "skincare",
+      "preferences": ["清爽", "控油", "温和护理"],
+      "document": {
+        "doc_id": "doc_skincare_acne_safe_smoke",
+        "title": "痘痘肌日常护理知识",
+        "source_file": "knowledge/skincare/acne_safe.md",
+        "category": "skincare",
+        "doc_type": "guide"
+      },
+      "chunks": [
+        {
+          "chunk_id": "skincare_acne_safe_001",
+          "section": "安全护肤建议",
+          "source": "knowledge/skincare/acne_safe.md",
+          "category": "skincare",
+          "text": "痘痘肌日常护肤可以关注清爽、控油、温和和保湿。护肤品不能替代药物或医疗治疗，如有严重皮肤问题应咨询专业医生。"
+        }
+      ],
+      "answer_template": "可以优先关注清爽、控油、温和和保湿这类日常护理方向，避免把护肤品当作医疗方案。",
+      "expect": {
+        "min_citations": 1,
+        "expected_chunk_ids": ["skincare_acne_safe_001"],
+        "answer_must_include_any": ["清爽", "控油", "温和", "保湿", "日常护理"],
+        "answer_forbidden": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病", "立即购买", "下单", "支付", "购物车", "购买链接"],
+        "effective_query_forbidden": ["治疗", "治愈", "药效"],
+        "knowledge_query_forbidden": ["治疗", "治愈", "药效"],
+        "citation_must_have_fields": ["chunk_id", "source_file", "content_preview", "document_id"]
+      }
+    }
+  ]
+}

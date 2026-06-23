@@ -1,0 +1,111 @@
+{
+  "products": [
+    {
+      "id": "fixture_phone_camera",
+      "category": "phone",
+      "title": "小米拍照手机",
+      "brand": "小米",
+      "price": 3999,
+      "tags": ["拍照", "影像", "传感器", "防抖"],
+      "description": "适合拍照和日常使用的手机"
+    },
+    {
+      "id": "fixture_phone_battery",
+      "category": "phone",
+      "title": "长续航快充手机",
+      "brand": "荣耀",
+      "price": 3299,
+      "tags": ["续航", "电池", "快充"],
+      "description": "适合重度使用的长续航手机"
+    },
+    {
+      "id": "fixture_phone_apple",
+      "category": "phone",
+      "title": "苹果拍照手机",
+      "brand": "Apple",
+      "price": 4999,
+      "tags": ["拍照", "影像"],
+      "description": "苹果品牌手机，用于负向偏好过滤测试"
+    },
+    {
+      "id": "fixture_shoes_commute",
+      "category": "shoes",
+      "title": "通勤轻便防滑鞋",
+      "brand": "安踏",
+      "price": 499,
+      "tags": ["通勤", "轻便", "防滑", "鞋"],
+      "description": "适合日常通勤和防滑需求"
+    },
+    {
+      "id": "fixture_shoes_high_heel",
+      "category": "shoes",
+      "title": "高跟通勤鞋",
+      "brand": "Demo",
+      "price": 599,
+      "tags": ["通勤", "高跟"],
+      "description": "用于负向偏好过滤测试"
+    },
+    {
+      "id": "fixture_skincare_sensitive",
+      "category": "skincare",
+      "title": "敏感肌保湿乳",
+      "brand": "理肤泉",
+      "price": 199,
+      "tags": ["敏感肌", "保湿", "温和"],
+      "description": "适合敏感肌日常保湿护理"
+    },
+    {
+      "id": "fixture_skincare_whitening",
+      "category": "skincare",
+      "title": "美白精华",
+      "brand": "Demo",
+      "price": 249,
+      "tags": ["美白"],
+      "description": "用于负向偏好过滤测试"
+    }
+  ],
+  "knowledge_chunks": [
+    {
+      "id": "knowledge_phone_camera",
+      "category": "phone",
+      "source_file": "knowledge/phone/camera.md",
+      "content": "手机拍照主要看传感器、光圈、防抖和影像算法。"
+    },
+    {
+      "id": "knowledge_phone_battery",
+      "category": "phone",
+      "source_file": "knowledge/phone/battery.md",
+      "content": "手机续航通常与电池容量、快充、功耗和系统优化有关。"
+    },
+    {
+      "id": "knowledge_shoes_size",
+      "category": "shoes",
+      "source_file": "knowledge/shoes/size.md",
+      "content": "鞋子尺码选择应参考脚长、脚宽、鞋楦和试穿体验。"
+    },
+    {
+      "id": "knowledge_shoes_anti_slip",
+      "category": "shoes",
+      "source_file": "knowledge/shoes/anti_slip.md",
+      "content": "通勤鞋防滑主要看鞋底材质、纹路和抓地能力。"
+    },
+    {
+      "id": "knowledge_skincare_sensitive",
+      "category": "skincare",
+      "source_file": "knowledge/skincare/sensitive.md",
+      "content": "敏感肌护肤应关注温和、保湿、低刺激和日常护理。"
+    },
+    {
+      "id": "knowledge_skincare_moisturizing",
+      "category": "skincare",
+      "source_file": "knowledge/skincare/moisturizing.md",
+      "content": "保湿护肤主要关注补水、屏障护理、温和和日常护理。"
+    },
+    {
+      "id": "knowledge_skincare_safety",
+      "category": "skincare",
+      "source_file": "knowledge/skincare/safety.md",
+      "content": "日常护肤可以关注清爽、控油、温和和保湿，避免把护肤品当作医疗方案。"
+    }
+  ]
+}
