@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 import json
 from typing import Any
 
@@ -13,6 +14,11 @@ from app.chat.query_understanding import (
     QueryUnderstandingService,
 )
 from app.chat.response_composer import ChatResponse, ResponseComposer
+from app.services.answer_grounding_guard import (
+    AnswerGroundingContext,
+    AnswerGroundingGuard,
+    GroundingGuardResult,
+)
 from app.retrieval.retrieval_service import (
     KnowledgeRetrievalService,
     ProductRetrievalService,
@@ -454,6 +460,7 @@ def response_compose_node(
     else:
         response = _compose_with_optional_llm(state, context, response)
 
+    response = _apply_answer_grounding_guard(state, context, response)
     _apply_response(state, response)
     append_trace(state, "response_compose", status="composed")
     return state
@@ -780,6 +787,74 @@ def _apply_response(state: AgentState, response: ChatResponse) -> None:
     state.product_cards = response.product_cards
     state.citations = response.citations
     state.trace.extend(response.trace)
+
+
+def _apply_answer_grounding_guard(
+    state: AgentState,
+    context: AgentRuntimeContext,
+    response: ChatResponse,
+) -> ChatResponse:
+    guard = context.answer_grounding_guard or AnswerGroundingGuard()
+    result = guard.check(_grounding_context_from_state(state, response))
+    trace_step = _grounding_trace_step(result)
+    if result.passed:
+        return _append_response_trace(response, trace_step)
+
+    fallback_answer = result.fallback_answer or response.answer
+    return ChatResponse(
+        answer=fallback_answer,
+        product_cards=response.product_cards,
+        citations=response.citations,
+        trace=[*response.trace, trace_step],
+    )
+
+
+def _grounding_context_from_state(
+    state: AgentState,
+    response: ChatResponse,
+) -> AnswerGroundingContext:
+    query_understanding = (
+        state.query_result.to_trace_dict()
+        if state.query_result is not None and hasattr(state.query_result, "to_trace_dict")
+        else dict(state.query_understanding or {})
+    )
+    return AnswerGroundingContext(
+        answer=response.answer,
+        route=state.intent,
+        query_understanding=query_understanding,
+        product_cards=[_object_to_dict(card) for card in response.product_cards],
+        citations=[_object_to_dict(citation) for citation in response.citations],
+        comparison_result=_object_to_dict(state.compare_context)
+        if state.compare_context is not None
+        else None,
+    )
+
+
+def _grounding_trace_step(result: GroundingGuardResult) -> dict[str, Any]:
+    return {
+        "step": "answer_grounding_guard",
+        "status": "passed" if result.passed else result.action,
+        "action": result.action,
+        "checks": dict(result.checks),
+        "violations": [
+            violation.model_dump(exclude_none=True)
+            for violation in result.violations
+        ],
+    }
+
+
+def _object_to_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if is_dataclass(value):
+        return asdict(value)
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "__dict__"):
+        return dict(value.__dict__)
+    return {}
 
 
 def _compose_with_optional_llm(

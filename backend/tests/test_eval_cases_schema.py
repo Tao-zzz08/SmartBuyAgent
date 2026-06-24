@@ -14,6 +14,7 @@ def test_all_eval_case_files_have_valid_schema() -> None:
         "retrieval_eval_cases.json",
         "rag_eval_cases.json",
         "multiturn_eval_cases.json",
+        "grounding_guard_eval_cases.json",
     ]
 
     for filename in files:
@@ -28,7 +29,7 @@ def test_all_eval_case_files_have_valid_schema() -> None:
                     assert turn.get("user"), case["id"]
                     assert isinstance(turn.get("expect", {}), dict), case["id"]
             else:
-                assert case.get("query"), case["id"]
+                assert case.get("query") or case.get("answer") or case.get("context"), case["id"]
                 assert isinstance(case.get("expect", {}), dict), case["id"]
 
 

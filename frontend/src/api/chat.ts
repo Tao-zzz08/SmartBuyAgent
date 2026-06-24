@@ -70,6 +70,22 @@ export type ChatStreamTokenPayload = {
   delta: string;
 };
 
+export type ChatStreamFinalAnswerPayload = {
+  request_id?: string;
+  session_id?: string;
+  answer: string;
+  status?: string;
+};
+
+export type ChatStreamGroundingGuardPayload = Record<string, unknown> & {
+  request_id?: string;
+  session_id?: string;
+  status?: string;
+  action?: string;
+  passed?: boolean;
+  violations?: unknown[];
+};
+
 export type ChatStreamGuardPayload = Record<string, unknown> & {
   request_id?: string;
   session_id?: string;
@@ -86,7 +102,10 @@ export type ChatStreamHandlers = {
   onNodeProgress?: (payload: ChatStreamNodePayload) => void;
   onRetrieval?: (payload: ChatStreamRetrievalPayload) => void;
   onToken?: (payload: ChatStreamTokenPayload) => void;
+  onAnswerDraftDelta?: (payload: ChatStreamTokenPayload) => void;
   onStreamGuard?: (payload: ChatStreamGuardPayload) => void;
+  onGroundingGuardResult?: (payload: ChatStreamGroundingGuardPayload) => void;
+  onFinalAnswer?: (payload: ChatStreamFinalAnswerPayload) => void;
   onNodeEnd?: (payload: ChatStreamNodePayload) => void;
   onTrace?: (payload: TraceStep) => void;
   onResult?: (payload: ChatResponse) => void;
@@ -238,8 +257,28 @@ function dispatchSseBlock(block: string, handlers: ChatStreamHandlers): void {
     return;
   }
 
+  if (event === "answer_draft_delta") {
+    handlers.onAnswerDraftDelta?.(payload as ChatStreamTokenPayload);
+    return;
+  }
+
   if (event === "stream_guard") {
     handlers.onStreamGuard?.(payload as ChatStreamGuardPayload);
+    return;
+  }
+
+  if (event === "grounding_guard_result") {
+    handlers.onGroundingGuardResult?.(payload as ChatStreamGroundingGuardPayload);
+    return;
+  }
+
+  if (event === "final_answer") {
+    handlers.onFinalAnswer?.(payload as ChatStreamFinalAnswerPayload);
+    return;
+  }
+
+  if (event === "product_cards" || event === "citations") {
+    handlers.onTrace?.({ step: event, ...(payload as Record<string, unknown>) });
     return;
   }
 

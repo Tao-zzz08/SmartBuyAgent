@@ -17,6 +17,7 @@ SUITE_CASES_PATHS = {
     "multiturn": PROJECT_ROOT / "data" / "eval" / "multiturn_eval_cases.json",
     "rag": PROJECT_ROOT / "data" / "eval" / "rag_eval_cases.json",
     "retrieval": PROJECT_ROOT / "data" / "eval" / "retrieval_eval_cases.json",
+    "grounding_guard": PROJECT_ROOT / "data" / "eval" / "grounding_guard_eval_cases.json",
 }
 
 
@@ -102,7 +103,7 @@ def run_suite(
     if suite == "all":
         suite_outputs = {
             name: run_suite(name, client=client, case_id=None, mode=mode)
-            for name in ["query_understanding", "multiturn", "rag"]
+            for name in ["query_understanding", "multiturn", "rag", "grounding_guard"]
         }
         retrieval_output = _run_retrieval_suite(case_id=None)
         suite_outputs["retrieval"] = retrieval_output
@@ -113,6 +114,9 @@ def run_suite(
 
     if suite == "retrieval":
         return _run_retrieval_suite(case_id=case_id)
+
+    if suite == "grounding_guard":
+        return _run_grounding_guard_suite(case_id=case_id)
 
     return run_eval(
         load_suite_cases(suite),
@@ -267,6 +271,66 @@ def _run_retrieval_suite(case_id: str | None = None) -> dict[str, Any]:
         if not cases:
             raise ValueError(f"Unknown retrieval eval case id: {case_id}")
     return run_default_eval(cases)
+
+
+def _run_grounding_guard_suite(case_id: str | None = None) -> dict[str, Any]:
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
+    from app.services.answer_grounding_guard import (
+        AnswerGroundingContext,
+        AnswerGroundingGuard,
+    )
+
+    cases = load_eval_cases(SUITE_CASES_PATHS["grounding_guard"])
+    if case_id is not None:
+        cases = [case for case in cases if case.get("id") == case_id]
+        if not cases:
+            raise ValueError(f"Unknown grounding guard eval case id: {case_id}")
+
+    guard = AnswerGroundingGuard()
+    results: list[dict[str, Any]] = []
+    for case in cases:
+        context = AnswerGroundingContext.model_validate(case.get("context") or {})
+        result = guard.check(context)
+        expected = case.get("expect") or {}
+        violations = [violation.type for violation in result.violations]
+        failure_reasons: list[str] = []
+
+        if expected.get("action") and result.action != expected["action"]:
+            failure_reasons.append(
+                f"action mismatch: expected {expected['action']!r}, got {result.action!r}"
+            )
+
+        for violation_type in expected.get("violation_types") or []:
+            if violation_type not in violations:
+                failure_reasons.append(f"missing violation type: {violation_type}")
+
+        fallback = result.fallback_answer or result.sanitized_answer or ""
+        for term in expected.get("fallback_forbidden") or []:
+            if term in fallback:
+                failure_reasons.append(f"fallback contains forbidden term: {term}")
+
+        results.append(
+            {
+                "id": case["id"],
+                "description": case.get("description", ""),
+                "passed": not failure_reasons,
+                "failure_reasons": failure_reasons,
+                "action": result.action,
+                "violations": violations,
+            }
+        )
+
+    failed = [result for result in results if not result["passed"]]
+    return {
+        "results": results,
+        "summary": {
+            "total_cases": len(results),
+            "passed_cases": len(results) - len(failed),
+            "failed_cases": len(failed),
+            "failed_case_ids": [result["id"] for result in failed],
+        },
+    }
 
 
 def _summarize_suite_outputs(outputs: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -911,7 +975,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--suite",
-        choices=["query_understanding", "multiturn", "retrieval", "rag", "all"],
+        choices=[
+            "query_understanding",
+            "multiturn",
+            "retrieval",
+            "rag",
+            "grounding_guard",
+            "all",
+        ],
         default="query_understanding",
     )
     parser.add_argument("--cases", default=str(DEFAULT_CASES_PATH))

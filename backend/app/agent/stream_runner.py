@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 import queue
 import threading
@@ -25,6 +26,11 @@ from app.agent.workflow import _route_name_for_state
 from app.chat.llm_answer_composer import SAFE_LLM_FALLBACK_ANSWER
 from app.chat.product_comparison import CompareContext
 from app.chat.response_composer import ChatResponse, ResponseComposer
+from app.services.answer_grounding_guard import (
+    AnswerGroundingContext,
+    AnswerGroundingGuard,
+    GroundingGuardResult,
+)
 from app.retrieval.retrieval_service import (
     KnowledgeRetrievalService,
     ProductRetrievalService,
@@ -106,8 +112,8 @@ class AgentStreamRunner:
                     emitter,
                     "clarification",
                     clarification_node,
-                    emit_tokens=True,
                 )
+                yield from self._run_response_node(state, emitter)
                 token_answer_emitted = True
             elif route == "shopping_guide":
                 yield from self._run_product_retrieval_node(state, emitter)
@@ -124,8 +130,8 @@ class AgentStreamRunner:
                     emitter,
                     "chitchat",
                     chitchat_node,
-                    emit_tokens=True,
                 )
+                yield from self._run_response_node(state, emitter)
                 token_answer_emitted = True
             else:
                 yield from self._run_response_node(state, emitter)
@@ -438,56 +444,90 @@ class AgentStreamRunner:
             product_candidates=state.product_candidates,
             citations=state.citations,
         )
+        _emit_response_payload_events(emitter, base_response)
 
         if state.answer:
-            return (
+            guarded_response, emitted = _guard_stream_response(
+                state,
+                self.context,
+                emitter,
                 ChatResponse(
                     answer=state.answer,
                     product_cards=base_response.product_cards,
                     citations=base_response.citations,
                     trace=base_response.trace,
                 ),
-                False,
             )
+            yield from emitter.drain()
+            return guarded_response, emitted
 
         if state.intent not in {"shopping_guide", "product_knowledge"}:
-            return base_response, False
+            guarded_response, emitted = _guard_stream_response(
+                state,
+                self.context,
+                emitter,
+                base_response,
+            )
+            yield from emitter.drain()
+            return guarded_response, emitted
 
         if self.context.llm_answer_composer is None:
-            return (
+            guarded_response, emitted = _guard_stream_response(
+                state,
+                self.context,
+                emitter,
                 _append_response_trace(
                     base_response,
                     {"step": "llm_answer", "enabled": False, "status": "disabled"},
                 ),
-                False,
             )
+            yield from emitter.drain()
+            return guarded_response, emitted
 
-        llm_answer, emitted_tokens = yield from self._stream_llm_answer(
+        llm_answer, emitted_draft = yield from self._stream_llm_answer(
             state,
             emitter,
         )
         normalized_answer = llm_answer.strip()
         if not normalized_answer or normalized_answer == SAFE_LLM_FALLBACK_ANSWER:
-            return (
+            guarded_response, emitted = _guard_stream_response(
+                state,
+                self.context,
+                emitter,
                 _append_response_trace(
                     base_response,
-                    {"step": "llm_answer", "enabled": True, "status": "fallback"},
+                    {
+                        "step": "llm_answer",
+                        "enabled": True,
+                        "status": "fallback",
+                        "draft_streamed": emitted_draft,
+                    },
                 ),
-                emitted_tokens,
             )
+            yield from emitter.drain()
+            return guarded_response, emitted
 
-        return (
+        guarded_response, emitted = _guard_stream_response(
+            state,
+            self.context,
+            emitter,
             ChatResponse(
                 answer=normalized_answer,
                 product_cards=base_response.product_cards,
                 citations=base_response.citations,
                 trace=[
                     *base_response.trace,
-                    {"step": "llm_answer", "enabled": True, "status": "success"},
+                    {
+                        "step": "llm_answer",
+                        "enabled": True,
+                        "status": "success",
+                        "draft_streamed": emitted_draft,
+                    },
                 ],
             ),
-            emitted_tokens,
         )
+        yield from emitter.drain()
+        return guarded_response, emitted
 
     def _stream_llm_answer(
         self,
@@ -527,7 +567,7 @@ class AgentStreamRunner:
                 break
             emitted_tokens = True
             emitter.emit(
-                "token",
+                "answer_draft_delta",
                 {
                     "node": "response_compose",
                     "delta": delta,
@@ -850,6 +890,113 @@ def _apply_response(state: AgentState, response: ChatResponse) -> None:
     state.product_cards = response.product_cards
     state.citations = response.citations
     state.trace.extend(response.trace)
+
+
+def _emit_response_payload_events(
+    emitter: StreamEventEmitter,
+    response: ChatResponse,
+) -> None:
+    emitter.emit(
+        "product_cards",
+        {"product_cards": [_object_to_dict(card) for card in response.product_cards]},
+    )
+    emitter.emit(
+        "citations",
+        {"citations": [_object_to_dict(citation) for citation in response.citations]},
+    )
+
+
+def _guard_stream_response(
+    state: AgentState,
+    context: AgentRuntimeContext,
+    emitter: StreamEventEmitter,
+    response: ChatResponse,
+) -> tuple[ChatResponse, bool]:
+    guard = context.answer_grounding_guard or AnswerGroundingGuard()
+    result = guard.check(_grounding_context_from_state(state, response))
+    trace_step = _grounding_trace_step(result)
+    emitter.emit("grounding_guard_result", _grounding_event_payload(result))
+
+    if result.passed:
+        guarded_response = _append_response_trace(response, trace_step)
+    else:
+        setattr(state, "_stream_done_status", "guarded")
+        guarded_response = ChatResponse(
+            answer=result.fallback_answer or response.answer,
+            product_cards=response.product_cards,
+            citations=response.citations,
+            trace=[*response.trace, trace_step],
+        )
+
+    emitter.emit(
+        "final_answer",
+        {
+            "answer": guarded_response.answer,
+            "status": "passed" if result.passed else result.action,
+        },
+    )
+    return guarded_response, True
+
+
+def _grounding_context_from_state(
+    state: AgentState,
+    response: ChatResponse,
+) -> AnswerGroundingContext:
+    query_understanding = (
+        state.query_result.to_trace_dict()
+        if state.query_result is not None and hasattr(state.query_result, "to_trace_dict")
+        else dict(state.query_understanding or {})
+    )
+    return AnswerGroundingContext(
+        answer=response.answer,
+        route=state.intent,
+        query_understanding=query_understanding,
+        product_cards=[_object_to_dict(card) for card in response.product_cards],
+        citations=[_object_to_dict(citation) for citation in response.citations],
+        comparison_result=_object_to_dict(state.compare_context)
+        if state.compare_context is not None
+        else None,
+    )
+
+
+def _grounding_trace_step(result: GroundingGuardResult) -> dict[str, Any]:
+    return {
+        "step": "answer_grounding_guard",
+        "status": "passed" if result.passed else result.action,
+        "action": result.action,
+        "checks": dict(result.checks),
+        "violations": [
+            violation.model_dump(exclude_none=True)
+            for violation in result.violations
+        ],
+    }
+
+
+def _grounding_event_payload(result: GroundingGuardResult) -> dict[str, Any]:
+    return {
+        "status": "passed" if result.passed else result.action,
+        "action": result.action,
+        "passed": result.passed,
+        "checks": dict(result.checks),
+        "violations": [
+            violation.model_dump(exclude_none=True)
+            for violation in result.violations
+        ],
+    }
+
+
+def _object_to_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if is_dataclass(value):
+        return asdict(value)
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "__dict__"):
+        return dict(value.__dict__)
+    return {}
 
 
 def _append_response_trace(

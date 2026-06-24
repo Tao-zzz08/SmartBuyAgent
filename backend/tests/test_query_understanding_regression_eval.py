@@ -92,7 +92,9 @@ def test_load_query_understanding_regression_cases() -> None:
 def test_load_suite_cases_for_multiturn_and_rag() -> None:
     assert load_suite_cases("multiturn")
     assert load_suite_cases("rag")
+    assert load_suite_cases("grounding_guard")
     assert SUITE_CASES_PATHS["rag"].name == "rag_eval_cases.json"
+    assert SUITE_CASES_PATHS["grounding_guard"].name == "grounding_guard_eval_cases.json"
 
 
 def test_query_understanding_regression_cases_pass_with_fake_client() -> None:

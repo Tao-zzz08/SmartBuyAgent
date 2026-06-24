@@ -5,9 +5,11 @@ import {
   sendChatMessageStream,
   type ChatResponse,
   type ChatStreamErrorPayload,
+  type ChatStreamGroundingGuardPayload,
   type ChatStreamGuardPayload,
   type ChatStreamNodePayload,
   type ChatStreamRetrievalPayload,
+  type ChatStreamTokenPayload,
   type TraceStep,
 } from "../api/chat";
 import { ChatInputBar } from "./ChatInputBar";
@@ -188,6 +190,15 @@ export function ChatWorkspace() {
               content: `${message.content}${payload.delta}`,
             }));
           },
+          onAnswerDraftDelta: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                answerDraftTrace(payload),
+              ),
+            }));
+          },
           onStreamGuard: (payload) => {
             updateMessage(targetSessionId, assistantMessageId, (message) => ({
               ...message,
@@ -195,6 +206,21 @@ export function ChatWorkspace() {
                 message.streamTrace,
                 streamGuardTrace(payload),
               ),
+            }));
+          },
+          onGroundingGuardResult: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                groundingGuardTrace(payload),
+              ),
+            }));
+          },
+          onFinalAnswer: (payload) => {
+            updateMessage(targetSessionId, assistantMessageId, (message) => ({
+              ...message,
+              content: payload.answer,
             }));
           },
           onNodeEnd: (payload) => {
@@ -474,10 +500,29 @@ function retrievalTrace(payload: ChatStreamRetrievalPayload): TraceStep {
   };
 }
 
+function answerDraftTrace(payload: ChatStreamTokenPayload): TraceStep {
+  return {
+    step: "answer_draft_delta",
+    status: "debug",
+    node: payload.node,
+    delta: payload.delta,
+  };
+}
+
 function streamGuardTrace(payload: ChatStreamGuardPayload): TraceStep {
   return {
     step: "stream_guard",
     ...payload,
+  };
+}
+
+function groundingGuardTrace(payload: ChatStreamGroundingGuardPayload): TraceStep {
+  return {
+    step: "answer_grounding_guard",
+    status: payload.status ?? payload.action ?? "checked",
+    action: payload.action,
+    passed: payload.passed,
+    violations: payload.violations,
   };
 }
 

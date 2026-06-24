@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         ProductRetrievalService,
     )
     from app.services.embedding import BaseEmbeddingService
+    from app.services.answer_grounding_guard import AnswerGroundingGuard
 
 
 @dataclass
@@ -33,4 +34,5 @@ class AgentRuntimeContext:
     conversation_memory_service: ConversationMemoryService | None = None
     followup_rewriter: FollowUpQueryRewriter | None = None
     product_comparison_service: ProductComparisonService | None = None
+    answer_grounding_guard: AnswerGroundingGuard | None = None
     cache_service: CacheService | None = None

@@ -32,6 +32,7 @@ from app.schemas.chat import (
 )
 from app.services.embedding import BaseEmbeddingService, get_embedding_service
 from app.services.llm import BaseLLMService, get_llm_service
+from app.services.answer_grounding_guard import AnswerGroundingGuard
 from app.streaming.events import StreamEvent, sse_event
 
 
@@ -273,6 +274,7 @@ def _stream_runtime_context(
         ),
         followup_rewriter=FollowUpQueryRewriter(),
         product_comparison_service=ProductComparisonService(db),
+        answer_grounding_guard=AnswerGroundingGuard(),
         cache_service=cache_service,
     )
 

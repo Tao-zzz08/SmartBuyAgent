@@ -379,6 +379,7 @@ The runtime `/api/chat` path is routed through a LangGraph-based `AgentWorkflow`
 - In-session product comparison restricted to previous candidate product IDs.
 - LangGraph AgentWorkflow orchestration for context loading, rewrite, routing, retrieval, comparison, and response composition.
 - SSE debug stream for session, node_start, retrieval, token, stream_guard, node_end, trace, result, done, and error events.
+- AnswerGroundingGuard validates final answer text against product cards, citations, query understanding, and project safety boundaries before it is shown as the official answer.
 - Frontend Chat Workspace with an in-memory session sidebar, chat message stream, bottom input bar, and per-answer expandable Debug panels.
 - Feedback loop with `helpful` / `not_helpful` ratings for future evaluation.
 
@@ -528,13 +529,16 @@ Events:
 - `node_start` / `node_end`: realtime node start/end events with `duration_ms`
 - `retrieval`: product retrieval, knowledge retrieval, or comparison progress summary
 - `token`: incremental answer text chunks
+- `answer_draft_delta`: LLM draft wording for debug display only
+- `grounding_guard_result`: final-answer grounding check status and violation summary
+- `final_answer`: official answer text after grounding validation
 - `stream_guard`: streaming-answer safety interception
 - `trace`: AgentWorkflow trace step
 - `result`: final chat response
 - `done`: stream completion
 - `error`: stream-level failure
 
-`/api/chat/stream` now emits realtime node-level SSE events, separate product/knowledge retrieval node events, node timing, and provider-native LLM token chunks. Streaming tokens pass through a safety guard; if the stream contains purchase overreach, fabricated purchase links, skincare treatment/drug-effect claims, or fabricated source language, the endpoint emits `stream_guard` and overwrites the final answer with a safe fallback. If the provider does not support native streaming, it falls back to chunked non-streaming output. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
+`/api/chat/stream` now emits realtime node-level SSE events, separate product/knowledge retrieval node events, node timing, and provider-native LLM draft chunks. Streaming draft text passes through a safety guard, but it is still debug-only wording; the official chat answer is emitted as `final_answer` after AnswerGroundingGuard validation and is also reflected in the final `result.answer`. If the stream contains purchase overreach, fabricated purchase links, skincare treatment/drug-effect claims, fabricated source language, or an ungrounded final answer, the endpoint emits the relevant guard event and overwrites the final answer with a safe fallback. If the provider does not support native streaming, it falls back to chunked non-streaming output. The final `result` event remains the source of truth for `answer`, `product_cards`, `citations`, `trace`, and `session_id`.
 
 ### `POST /api/feedback`
 
@@ -696,6 +700,7 @@ Current evaluation coverage includes:
 - QueryUnderstanding regression eval for structured intent, route, memory merge, and comparison references
 - Retrieval eval for category, budget, positive preference, and negative preference constraints
 - RAG eval for grounded answers, real citations, unknown-knowledge safety, and skincare safety boundaries
+- GroundingGuard eval for final-answer price, purchase-boundary, unsupported-fact, brand, citation-support, and skincare-safety violations
 - Multiturn eval for budget ladders, category switching, preference updates, comparison, and chat/stream consistency
 - Product retrieval
 - Knowledge retrieval

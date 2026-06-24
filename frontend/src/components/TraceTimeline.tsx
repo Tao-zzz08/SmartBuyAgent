@@ -25,6 +25,8 @@ const STEP_TITLES: Record<string, string> = {
   response_compose: "\u56de\u7b54\u751f\u6210",
   response_composer: "\u56de\u7b54\u7ec4\u88c5",
   llm_answer: "LLM \u56de\u7b54",
+  answer_draft_delta: "LLM \u8349\u7a3f",
+  answer_grounding_guard: "\u56de\u7b54\u53ef\u4fe1\u6821\u9a8c",
   conversation_memory: "\u4f1a\u8bdd\u4fdd\u5b58",
   agent_workflow: "Agent \u5de5\u4f5c\u6d41",
   node_start: "节点开始",

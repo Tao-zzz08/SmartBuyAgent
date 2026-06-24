@@ -18,6 +18,9 @@ from test_chat_api import (  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+STREAM_QUERY = "预算3000，推荐一款拍照好的手机"
+
+
 class UnsafeStreamingLLMService(BaseLLMService):
     provider = "unsafe_fake"
 
@@ -29,7 +32,7 @@ class UnsafeStreamingLLMService(BaseLLMService):
         temperature: float | None = None,
     ) -> LLMResponse:
         return LLMResponse(
-            content="这是一段非流式安全占位回答。",
+            content="This is a non-streaming safe placeholder.",
             model="unsafe-fake",
             provider=self.provider,
         )
@@ -41,13 +44,12 @@ class UnsafeStreamingLLMService(BaseLLMService):
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> Iterator[str]:
-        yield "这款整体更适合拍照，"
-        yield "我已经帮你下单。"
+        yield "This candidate matches your camera preference. "
+        yield "buy now"
 
 
 class SafeStreamingLLMService(BaseLLMService):
     provider = "safe_fake"
-
     answer = "建议优先看候选商品，它在预算内，并且标签包含拍照和续航。"
 
     def chat(
@@ -73,6 +75,34 @@ class SafeStreamingLLMService(BaseLLMService):
         yield "建议优先看"
         yield "候选商品，它在预算内，"
         yield "并且标签包含拍照和续航。"
+
+
+class GroundingUnsafeLLMService(BaseLLMService):
+    provider = "grounding_unsafe_fake"
+    answer = "这款手机现在有限时优惠，建议立即下单。"
+
+    def chat(
+        self,
+        messages: list[LLMMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> LLMResponse:
+        return LLMResponse(
+            content=self.answer,
+            model="grounding-unsafe-fake",
+            provider=self.provider,
+        )
+
+    def stream_chat(
+        self,
+        messages: list[LLMMessage],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> Iterator[str]:
+        yield "这款手机现在有限时优惠，"
+        yield "建议立即下单。"
 
 
 class FailingCacheService(InMemoryCacheService):
@@ -105,13 +135,13 @@ def test_chat_stream_blocks_unsafe_tokens_and_returns_guarded_result() -> None:
         client = TestClient(app)
         response = client.post(
             "/api/chat/stream",
-            json={"query": "预算3000，推荐一款拍照好的手机", "debug": True},
+            json={"query": STREAM_QUERY, "debug": True},
         )
         events = _sse_events(response.text)
-        token_text = "".join(
+        draft_text = "".join(
             event["data"].get("delta", "")
             for event in events
-            if event["event"] == "token"
+            if event["event"] == "answer_draft_delta"
         )
         result = _sse_event_data(events, "result")
         guard_event = _sse_event_data(events, "stream_guard")
@@ -126,7 +156,7 @@ def test_chat_stream_blocks_unsafe_tokens_and_returns_guarded_result() -> None:
         assert response.status_code == 200
         assert guard_event["status"] == "blocked"
         assert guard_event["reason"] == "purchase_action"
-        assert guard_event["matched_phrase"] == "我已经帮你下单"
+        assert guard_event["matched_phrase"] == "buy now"
         assert error_event["failed_node"] == "response_compose"
         assert error_event["error_type"] == "StreamSafetyViolation"
         assert response_node_end["status"] == "failed"
@@ -135,7 +165,7 @@ def test_chat_stream_blocks_unsafe_tokens_and_returns_guarded_result() -> None:
         assert result["answer"] == STREAM_GUARDED_FALLBACK_ANSWER
         assert result["product_cards"]
         assert result["citations"]
-        assert "我已经帮你下单" not in token_text
+        assert "buy now" not in draft_text
         assert any(
             step.get("step") == "stream_guard"
             and step.get("status") == "blocked"
@@ -145,7 +175,7 @@ def test_chat_stream_blocks_unsafe_tokens_and_returns_guarded_result() -> None:
         _cleanup(engine, db_path, chroma_dir)
 
 
-def test_chat_stream_safe_tokens_still_match_final_answer() -> None:
+def test_chat_stream_safe_draft_is_replaced_by_final_answer() -> None:
     engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
         "smartbuy_chat_stream_safe_guard_test.db",
         "chroma_chat_stream_safe_guard_test",
@@ -161,21 +191,65 @@ def test_chat_stream_safe_tokens_still_match_final_answer() -> None:
         client = TestClient(app)
         response = client.post(
             "/api/chat/stream",
-            json={"query": "预算3000，推荐一款拍照好的手机", "debug": True},
+            json={"query": STREAM_QUERY, "debug": True},
         )
         events = _sse_events(response.text)
-        token_text = "".join(
+        draft_text = "".join(
             event["data"].get("delta", "")
             for event in events
-            if event["event"] == "token"
+            if event["event"] == "answer_draft_delta"
         )
         result = _sse_event_data(events, "result")
 
         assert response.status_code == 200
         assert _sse_event_data(events, "done")["status"] == "ok"
         assert _sse_event_datas(events, "stream_guard") == []
-        assert token_text == result["answer"]
+        assert draft_text == result["answer"]
+        assert _sse_event_data(events, "final_answer")["answer"] == result["answer"]
         assert result["answer"] == SafeStreamingLLMService.answer
+    finally:
+        _cleanup(engine, db_path, chroma_dir)
+
+
+def test_chat_stream_grounding_guard_fallbacks_unsafe_draft() -> None:
+    engine, TestingSessionLocal, db_path, chroma_dir, chroma_client = _prepare_api_stack(
+        "smartbuy_chat_stream_grounding_guard_test.db",
+        "chroma_chat_stream_grounding_guard_test",
+    )
+    llm_answer_composer = LLMAnswerComposer(GroundingUnsafeLLMService())
+    _override_dependencies(
+        TestingSessionLocal,
+        chroma_client,
+        llm_answer_composer=llm_answer_composer,
+        cache_service=InMemoryCacheService(),
+    )
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/chat/stream",
+            json={"query": STREAM_QUERY, "debug": True},
+        )
+        events = _sse_events(response.text)
+        draft_text = "".join(
+            event["data"].get("delta", "")
+            for event in events
+            if event["event"] == "answer_draft_delta"
+        )
+        final_answer = _sse_event_data(events, "final_answer")
+        guard_result = _sse_event_data(events, "grounding_guard_result")
+        result = _sse_event_data(events, "result")
+
+        assert response.status_code == 200
+        assert "立即下单" in draft_text
+        assert guard_result["status"] == "fallback"
+        assert any(
+            violation["type"] == "purchase_boundary_violation"
+            for violation in guard_result["violations"]
+        )
+        assert "立即下单" not in final_answer["answer"]
+        assert "限时优惠" not in final_answer["answer"]
+        assert result["answer"] == final_answer["answer"]
+        assert _sse_event_data(events, "done")["status"] == "guarded"
     finally:
         _cleanup(engine, db_path, chroma_dir)
 
@@ -196,7 +270,7 @@ def test_chat_stream_guard_still_works_when_cache_fails() -> None:
         client = TestClient(app)
         response = client.post(
             "/api/chat/stream",
-            json={"query": "预算3000，推荐一款拍照好的手机", "debug": True},
+            json={"query": STREAM_QUERY, "debug": True},
         )
         events = _sse_events(response.text)
 

@@ -43,6 +43,7 @@ Current backend tests cover:
 - StreamSafetyGuard phrase matching with rolling-buffer cross-token detection
 - Guarded `/api/chat/stream` behavior: `stream_guard`, response node failure, safe fallback result, and no unsafe token exposure
 - Query-understanding stream trace consistency, including `llm_fallback_attempted`, `llm_fallback_status`, `source`, `confidence`, and `reason`
+- AnswerGroundingGuard checks for unsupported prices, purchase-boundary language, unsupported stock/discount/ranking claims, unsupported brand mentions, missing citation support, and skincare medical claims
 
 ## 2. Frontend Build
 
@@ -65,13 +66,14 @@ This validates:
 
 ## 3. Evaluation Suites
 
-SmartBuyAgent now keeps four eval files with separate responsibilities:
+SmartBuyAgent now keeps five eval files with separate responsibilities:
 
 ```text
 data/eval/query_understanding_regression_cases.json
 data/eval/retrieval_eval_cases.json
 data/eval/rag_eval_cases.json
 data/eval/multiturn_eval_cases.json
+data/eval/grounding_guard_eval_cases.json
 ```
 
 ### QueryUnderstanding Eval
@@ -126,6 +128,17 @@ fixed product IDs:
 - comparison followed by a return to shopping-guide retrieval
 - stream and non-stream consistency for structured query understanding
 
+### GroundingGuard Eval
+
+`grounding_guard_eval_cases.json` validates the final-answer guard layer:
+
+- purchase-boundary and discount language is blocked before final output
+- explicit price claims must match product cards, query budget, or comparison evidence
+- unsupported inventory, sales, coupon, and ranking claims fall back to deterministic answers
+- brand mentions must be grounded in current product cards and negative preferences
+- product-knowledge answers require citation support
+- skincare answers cannot make treatment, cure, drug-effect, prescription, or disease-repair claims
+
 Run:
 
 ```bash
@@ -134,6 +147,7 @@ python ../scripts/run_query_understanding_eval.py --suite query_understanding
 python ../scripts/run_query_understanding_eval.py --suite multiturn
 python ../scripts/run_query_understanding_eval.py --suite rag
 python ../scripts/run_query_understanding_eval.py --suite retrieval
+python ../scripts/run_query_understanding_eval.py --suite grounding_guard
 python ../scripts/run_query_understanding_eval.py --suite all
 python ../scripts/eval_retrieval.py
 ```
@@ -147,6 +161,7 @@ pytest tests/test_query_understanding_regression_eval.py
 pytest tests/test_retrieval_eval_cases.py
 pytest tests/test_rag_eval_cases.py
 pytest tests/test_multiturn_eval_cases.py
+pytest tests/test_answer_grounding_guard.py
 ```
 
 These checks are deterministic regression and boundary assertions. They do not

@@ -1,0 +1,176 @@
+[
+  {
+    "id": "purchase_and_discount_fallback",
+    "description": "Unsupported discount and purchase action language must fall back.",
+    "context": {
+      "answer": "这款手机现在有限时优惠，建议立即下单。",
+      "route": "shopping_guide",
+      "query_understanding": {
+        "intent": "shopping_guide",
+        "category": "phone",
+        "budget": {"max": 5000},
+        "preferences": ["拍照"]
+      },
+      "product_cards": [
+        {"product_id": "p1", "title": "小米拍照手机", "brand": "小米", "price": 3999}
+      ],
+      "citations": []
+    },
+    "expect": {
+      "action": "fallback",
+      "violation_types": ["purchase_boundary_violation", "unsupported_fact_claim"]
+    }
+  },
+  {
+    "id": "unsupported_price_fallback",
+    "description": "Explicit answer prices must come from product cards, budget, or comparison evidence.",
+    "context": {
+      "answer": "这款手机目前 3499 元，很适合你。",
+      "route": "shopping_guide",
+      "query_understanding": {
+        "intent": "shopping_guide",
+        "category": "phone",
+        "budget": {"max": 5000}
+      },
+      "product_cards": [
+        {"product_id": "p1", "title": "小米拍照手机", "brand": "小米", "price": 3999}
+      ],
+      "citations": []
+    },
+    "expect": {
+      "action": "fallback",
+      "violation_types": ["unsupported_price_claim"]
+    }
+  },
+  {
+    "id": "budget_price_passes",
+    "description": "Budget numbers from query understanding should not be treated as unsupported product prices.",
+    "context": {
+      "answer": "在 5000 元预算内，可以优先考虑这几款拍照手机。",
+      "route": "shopping_guide",
+      "query_understanding": {
+        "intent": "shopping_guide",
+        "category": "phone",
+        "budget": {"max": 5000},
+        "preferences": ["拍照"]
+      },
+      "product_cards": [
+        {"product_id": "p1", "title": "小米拍照手机", "brand": "小米", "price": 3999}
+      ],
+      "citations": []
+    },
+    "expect": {
+      "action": "pass",
+      "violation_types": []
+    }
+  },
+  {
+    "id": "skincare_medical_claim_fallback",
+    "description": "Skincare final answers must not make treatment, cure, drug-effect, or disease-repair claims.",
+    "context": {
+      "answer": "这款产品可以治疗痘痘并修复疾病。",
+      "route": "shopping_guide",
+      "query_understanding": {
+        "intent": "shopping_guide",
+        "category": "skincare",
+        "budget": {"max": 300}
+      },
+      "product_cards": [
+        {"product_id": "s1", "title": "温和保湿乳", "brand": "理肤泉", "price": 199, "category": "skincare"}
+      ],
+      "citations": []
+    },
+    "expect": {
+      "action": "fallback",
+      "violation_types": ["skincare_medical_claim"],
+      "fallback_forbidden": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病"]
+    }
+  },
+  {
+    "id": "citation_supported_knowledge_passes",
+    "description": "Product knowledge answers with citation support should pass grounding.",
+    "context": {
+      "answer": "手机拍照主要看传感器、防抖和影像算法。",
+      "route": "product_knowledge",
+      "query_understanding": {
+        "intent": "product_knowledge",
+        "category": "phone"
+      },
+      "product_cards": [],
+      "citations": [
+        {
+          "chunk_id": "c1",
+          "source_file": "knowledge/phone/camera.md",
+          "content_preview": "手机拍照通常需要关注传感器尺寸、防抖能力和影像算法。"
+        }
+      ]
+    },
+    "expect": {
+      "action": "pass",
+      "violation_types": []
+    }
+  },
+  {
+    "id": "knowledge_without_citation_fallback",
+    "description": "Product knowledge answers without citations should fall back instead of presenting unsupported knowledge.",
+    "context": {
+      "answer": "手机拍照主要看传感器、防抖和影像算法。",
+      "route": "product_knowledge",
+      "query_understanding": {
+        "intent": "product_knowledge",
+        "category": "phone"
+      },
+      "product_cards": [],
+      "citations": []
+    },
+    "expect": {
+      "action": "fallback",
+      "violation_types": ["citation_support_missing"]
+    }
+  },
+  {
+    "id": "unsupported_brand_fallback",
+    "description": "Answers must not introduce brands filtered out of current product cards or negative preferences.",
+    "context": {
+      "answer": "你也可以考虑 iPhone。",
+      "route": "shopping_guide",
+      "query_understanding": {
+        "intent": "shopping_guide",
+        "category": "phone",
+        "negative_preferences": ["苹果"]
+      },
+      "product_cards": [
+        {"product_id": "p1", "title": "小米拍照手机", "brand": "小米", "price": 3999},
+        {"product_id": "p2", "title": "荣耀影像手机", "brand": "荣耀", "price": 3599}
+      ],
+      "citations": []
+    },
+    "expect": {
+      "action": "fallback",
+      "violation_types": ["unsupported_brand_or_product_claim"]
+    }
+  },
+  {
+    "id": "negative_brand_exclusion_phrase_passes",
+    "description": "Negative preference explanations such as excluding Apple should not be treated as unsupported brand recommendations.",
+    "context": {
+      "answer": "这几款手机都符合预算，同时已尽量排除苹果。",
+      "route": "shopping_guide",
+      "query_understanding": {
+        "intent": "shopping_guide",
+        "category": "phone",
+        "budget": {"max": 5000},
+        "negative_preferences": ["苹果"]
+      },
+      "product_cards": [
+        {"product_id": "p1", "title": "小米拍照手机", "brand": "小米", "price": 3999},
+        {"product_id": "p2", "title": "荣耀影像手机", "brand": "荣耀", "price": 3599}
+      ],
+      "citations": []
+    },
+    "expect": {
+      "action": "pass",
+      "violation_types": []
+    }
+  }
+]

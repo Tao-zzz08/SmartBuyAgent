@@ -15,6 +15,7 @@ from app.retrieval.retrieval_service import (
     ProductRetrievalService,
 )
 from app.services.embedding import BaseEmbeddingService
+from app.services.answer_grounding_guard import AnswerGroundingGuard
 
 
 class ChatService:
@@ -26,6 +27,7 @@ class ChatService:
         query_understanding_service: QueryUnderstandingService | None = None,
         response_composer: ResponseComposer | None = None,
         llm_answer_composer: LLMAnswerComposer | None = None,
+        answer_grounding_guard: AnswerGroundingGuard | None = None,
         cache_service: CacheService | None = None,
     ) -> None:
         self.db = db
@@ -37,6 +39,7 @@ class ChatService:
         )
         self.response_composer = response_composer or ResponseComposer()
         self.llm_answer_composer = llm_answer_composer
+        self.answer_grounding_guard = answer_grounding_guard or AnswerGroundingGuard()
         self.product_retrieval_service = (
             ProductRetrievalService(
                 db=db,
@@ -110,6 +113,7 @@ class ChatService:
             knowledge_retrieval_service=self.knowledge_retrieval_service,
             response_composer=self.response_composer,
             llm_answer_composer=self.llm_answer_composer,
+            answer_grounding_guard=self.answer_grounding_guard,
             conversation_memory_service=self.conversation_memory_service,
             product_comparison_service=self.product_comparison_service,
             cache_service=self.cache_service,
