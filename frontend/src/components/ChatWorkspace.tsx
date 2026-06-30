@@ -185,12 +185,19 @@ export function ChatWorkspace() {
             }));
           },
           onToken: (payload) => {
+            // Legacy token events are also treated as debug-only in stream mode.
+            // The official assistant answer comes from final_answer/result.answer.
             updateMessage(targetSessionId, assistantMessageId, (message) => ({
               ...message,
-              content: `${message.content}${payload.delta}`,
+              streamTrace: appendStreamTrace(
+                message.streamTrace,
+                legacyTokenTrace(payload),
+              ),
             }));
           },
           onAnswerDraftDelta: (payload) => {
+            // Draft deltas are debug-only. The official assistant answer is
+            // updated only by final_answer and reconciled by result.answer.
             updateMessage(targetSessionId, assistantMessageId, (message) => ({
               ...message,
               streamTrace: appendStreamTrace(
@@ -503,6 +510,15 @@ function retrievalTrace(payload: ChatStreamRetrievalPayload): TraceStep {
 function answerDraftTrace(payload: ChatStreamTokenPayload): TraceStep {
   return {
     step: "answer_draft_delta",
+    status: "debug",
+    node: payload.node,
+    delta: payload.delta,
+  };
+}
+
+function legacyTokenTrace(payload: ChatStreamTokenPayload): TraceStep {
+  return {
+    step: "token",
     status: "debug",
     node: payload.node,
     delta: payload.delta,

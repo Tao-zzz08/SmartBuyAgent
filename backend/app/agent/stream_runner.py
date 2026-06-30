@@ -83,7 +83,7 @@ class AgentStreamRunner:
             request_id=request_id,
             session_id=event_session_id or session_id,
         )
-        token_answer_emitted = False
+        final_answer_emitted = False
 
         try:
             yield from self._run_node(state, emitter, "load_context", load_context_node)
@@ -105,7 +105,7 @@ class AgentStreamRunner:
                     compare_node,
                 )
                 yield from self._run_response_node(state, emitter)
-                token_answer_emitted = True
+                final_answer_emitted = True
             elif route == "clarification":
                 yield from self._run_node(
                     state,
@@ -114,16 +114,16 @@ class AgentStreamRunner:
                     clarification_node,
                 )
                 yield from self._run_response_node(state, emitter)
-                token_answer_emitted = True
+                final_answer_emitted = True
             elif route == "shopping_guide":
                 yield from self._run_product_retrieval_node(state, emitter)
                 yield from self._run_knowledge_retrieval_node(state, emitter, top_k=3)
                 yield from self._run_response_node(state, emitter)
-                token_answer_emitted = True
+                final_answer_emitted = True
             elif route == "product_knowledge":
                 yield from self._run_knowledge_retrieval_node(state, emitter, top_k=5)
                 yield from self._run_response_node(state, emitter)
-                token_answer_emitted = True
+                final_answer_emitted = True
             elif route == "chitchat":
                 yield from self._run_node(
                     state,
@@ -132,12 +132,12 @@ class AgentStreamRunner:
                     chitchat_node,
                 )
                 yield from self._run_response_node(state, emitter)
-                token_answer_emitted = True
+                final_answer_emitted = True
             else:
                 yield from self._run_response_node(state, emitter)
-                token_answer_emitted = True
+                final_answer_emitted = True
 
-            if not token_answer_emitted and state.answer:
+            if not final_answer_emitted and state.answer:
                 yield from self._emit_answer_tokens(emitter, state.answer)
 
             yield from self._run_node(state, emitter, "save_trace", save_trace_node)
@@ -299,7 +299,7 @@ class AgentStreamRunner:
         started_at = datetime.now(timezone.utc).isoformat()
         start_time = time.perf_counter()
         trace_start = len(state.trace)
-        token_answer_emitted = False
+        final_answer_emitted = False
 
         emitter.emit(
             "node_start",
@@ -313,7 +313,7 @@ class AgentStreamRunner:
         yield from emitter.drain()
 
         try:
-            response, token_answer_emitted = yield from self._compose_response(
+            response, final_answer_emitted = yield from self._compose_response(
                 state,
                 emitter,
             )
@@ -398,7 +398,7 @@ class AgentStreamRunner:
             emitter.emit("trace", trace_step)
             yield from emitter.drain()
 
-        if state.answer and not token_answer_emitted:
+        if state.answer and not final_answer_emitted:
             yield from self._emit_answer_tokens(emitter, state.answer)
 
         duration_ms = _duration_ms(start_time)

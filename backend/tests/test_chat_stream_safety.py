@@ -79,7 +79,7 @@ class SafeStreamingLLMService(BaseLLMService):
 
 class GroundingUnsafeLLMService(BaseLLMService):
     provider = "grounding_unsafe_fake"
-    answer = "这款手机现在有限时优惠，建议立即下单。"
+    answer = "这款手机很适合拍照，建议下单。"
 
     def chat(
         self,
@@ -101,8 +101,8 @@ class GroundingUnsafeLLMService(BaseLLMService):
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> Iterator[str]:
-        yield "这款手机现在有限时优惠，"
-        yield "建议立即下单。"
+        yield "这款手机很适合拍照，"
+        yield "建议下单。"
 
 
 class FailingCacheService(InMemoryCacheService):
@@ -240,13 +240,13 @@ def test_chat_stream_grounding_guard_fallbacks_unsafe_draft() -> None:
         result = _sse_event_data(events, "result")
 
         assert response.status_code == 200
-        assert "立即下单" in draft_text
+        assert "下单" in draft_text
         assert guard_result["status"] == "fallback"
         assert any(
             violation["type"] == "purchase_boundary_violation"
             for violation in guard_result["violations"]
         )
-        assert "立即下单" not in final_answer["answer"]
+        assert "下单" not in final_answer["answer"]
         assert "限时优惠" not in final_answer["answer"]
         assert result["answer"] == final_answer["answer"]
         assert _sse_event_data(events, "done")["status"] == "guarded"
