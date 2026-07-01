@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 import json
 import re
 from typing import Any, Literal
@@ -107,6 +107,8 @@ class QueryUnderstandingResult(BaseModel):
     llm_fallback_status: str | None = None
     llm_fallback_error: str | None = None
     llm_fallback_result: dict[str, Any] | None = None
+    llm_fallback_should_call: bool = False
+    llm_fallback_trigger_reasons: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -240,6 +242,8 @@ class QueryUnderstandingResult(BaseModel):
             "llm_fallback_status": self.llm_fallback_status,
             "llm_fallback_error": self.llm_fallback_error,
             "llm_fallback_result": self.llm_fallback_result,
+            "llm_fallback_should_call": self.llm_fallback_should_call,
+            "llm_fallback_trigger_reasons": list(self.llm_fallback_trigger_reasons),
         }
 
 
@@ -314,6 +318,12 @@ class CategoryRule:
     category_id: str
     category_path: str
     keywords: list[str]
+
+
+@dataclass(frozen=True)
+class LLMFallbackDecision:
+    should_call: bool
+    reasons: list[str] = dataclass_field(default_factory=list)
 
 
 class QueryUnderstandingService:
@@ -750,17 +760,20 @@ class QueryUnderstandingService:
         previous_memory: ShoppingMemory | None,
     ) -> QueryUnderstandingResult:
         previous = previous_memory or empty_memory_from_result(rule_result)
-        if not should_call_llm_fallback(
+        decision = decide_llm_fallback(
             rule_result=rule_result,
             query=query,
             previous_memory=previous,
             confidence_threshold=self.llm_confidence_threshold,
             enabled=self.llm_enabled,
-        ):
+        )
+        if not decision.should_call:
             return rule_result.model_copy(
                 update={
                     "llm_fallback_attempted": False,
                     "llm_fallback_status": "skipped",
+                    "llm_fallback_should_call": False,
+                    "llm_fallback_trigger_reasons": decision.reasons,
                 }
             )
 
@@ -771,10 +784,10 @@ class QueryUnderstandingService:
                 previous_memory=previous,
             )
         except Exception:
-            return _with_llm_failure(rule_result, "llm_call_failed")
+            return _with_llm_failure(rule_result, "llm_call_failed", decision=decision)
 
         if llm_output is None:
-            return _with_llm_failure(rule_result, "invalid_json")
+            return _with_llm_failure(rule_result, "invalid_json", decision=decision)
 
         sanitized = sanitize_llm_understanding(
             llm_output,
@@ -793,6 +806,8 @@ class QueryUnderstandingService:
                 "llm_fallback_status": "success",
                 "llm_fallback_error": None,
                 "llm_fallback_result": sanitized.model_dump(),
+                "llm_fallback_should_call": True,
+                "llm_fallback_trigger_reasons": decision.reasons,
             }
         )
 
@@ -830,26 +845,218 @@ def should_call_llm_fallback(
     confidence_threshold: float,
     enabled: bool = True,
 ) -> bool:
+    return decide_llm_fallback(
+        rule_result=rule_result,
+        query=query,
+        previous_memory=previous_memory,
+        confidence_threshold=confidence_threshold,
+        enabled=enabled,
+    ).should_call
+
+
+def decide_llm_fallback(
+    *,
+    rule_result: QueryUnderstandingResult,
+    query: str,
+    previous_memory: ShoppingMemory | None,
+    confidence_threshold: float,
+    enabled: bool = True,
+) -> LLMFallbackDecision:
     if not enabled:
-        return False
+        return LLMFallbackDecision(False, ["disabled"])
     normalized = query.strip()
     if not normalized:
-        return False
+        return LLMFallbackDecision(False, ["empty_query"])
+    if _looks_like_safety_boundary_query(normalized):
+        return LLMFallbackDecision(False, ["safety_boundary"])
+
+    reasons: list[str] = []
+    if previous_memory is not None and previous_memory.has_shopping_context():
+        if _looks_like_ambiguous_follow_up(normalized):
+            reasons.append("ambiguous_follow_up")
+        if _contains_product_reference(normalized):
+            reasons.append("product_reference")
+
+    if _looks_like_multi_intent_query(normalized):
+        reasons.append("multi_intent_query")
+
+    if _looks_like_long_tail_first_turn_query(normalized, rule_result):
+        reasons.extend(["long_tail_first_turn", "weak_rule_slots"])
+
+    if _looks_like_unknown_category_purchase(normalized, rule_result):
+        reasons.append("unknown_category_purchase")
+
+    if (
+        rule_result.confidence < confidence_threshold
+        and _looks_like_user_needs_product_help(normalized)
+        and rule_result.intent != "chitchat"
+    ):
+        reasons.append("low_confidence_product_help")
+
+    if reasons:
+        return LLMFallbackDecision(True, _dedupe_terms(reasons))
+
     if rule_result.confidence >= confidence_threshold and rule_result.intent != "clarification":
+        return LLMFallbackDecision(False, ["strong_rule"])
+
+    return LLMFallbackDecision(False, ["no_trigger"])
+
+
+def _looks_like_safety_boundary_query(query: str) -> bool:
+    lower_query = query.lower()
+    purchase_terms = [
+        *PURCHASE_BOUNDARY_TERMS,
+        "购买",
+        "下单",
+        "支付",
+        "购物车",
+        "订单",
+        "购买链接",
+        "立即购买",
+        "checkout",
+        "payment",
+        "cart",
+    ]
+    medical_terms = [
+        *SKINCARE_MEDICAL_TERMS,
+        "治疗",
+        "治愈",
+        "药效",
+        "处方",
+        "医学修复",
+        "修复疾病",
+        "临床治愈率",
+    ]
+    return _contains_any_casefold(lower_query, purchase_terms) or _contains_any_casefold(
+        lower_query,
+        medical_terms,
+    )
+
+
+def _looks_like_long_tail_first_turn_query(
+    query: str,
+    rule_result: QueryUnderstandingResult,
+) -> bool:
+    if rule_result.is_follow_up:
         return False
-    if previous_memory is None or not previous_memory.has_shopping_context():
+    if len(query.strip()) < 22:
         return False
-    if _looks_like_ambiguous_follow_up(normalized):
-        return True
-    if _contains_product_reference(normalized):
-        return True
-    if len(normalized) <= 18 and rule_result.confidence < confidence_threshold:
-        return True
-    return rule_result.confidence < confidence_threshold and rule_result.intent in {
-        "chitchat",
-        "clarification",
-        "compare",
+    if not _looks_like_user_needs_product_help(query):
+        return False
+    weak_rule_slots = (
+        rule_result.category is None
+        or not rule_result.preferences
+        or rule_result.confidence < 0.85
+    )
+    scene_terms = [
+        "vlog",
+        "旅行",
+        "夜拍",
+        "晚上",
+        "妈妈",
+        "日常用",
+        "露营",
+        "上课",
+        "通勤",
+        "下雨天",
+        "别太贵",
+        "不要太",
+    ]
+    return weak_rule_slots and _contains_any_casefold(query, scene_terms)
+
+
+def _looks_like_multi_intent_query(query: str) -> bool:
+    connector_terms = ["顺便", "同时", "另外", "也解释", "也说说", "再说说", "并且"]
+    has_connector = _contains_any_casefold(query, connector_terms)
+    has_shopping = _contains_any_casefold(query, _shopping_cue_terms())
+    has_knowledge = _contains_any_casefold(query, _knowledge_cue_terms())
+    has_compare = _contains_any_casefold(query, _compare_cue_terms())
+    return (has_connector and (has_shopping or has_compare) and has_knowledge) or (
+        (has_shopping or has_compare) and has_knowledge and len(query) >= 18
+    )
+
+
+def _looks_like_unknown_category_purchase(
+    query: str,
+    rule_result: QueryUnderstandingResult,
+) -> bool:
+    if rule_result.category is not None:
+        return False
+    if _looks_like_chitchat_query(query):
+        return False
+    return _looks_like_user_needs_product_help(query)
+
+
+def _looks_like_user_needs_product_help(query: str) -> bool:
+    if _looks_like_chitchat_query(query):
+        return False
+    return _contains_any_casefold(query, _shopping_cue_terms())
+
+
+def _looks_like_chitchat_query(query: str) -> bool:
+    return query.strip().lower() in {
+        "你好",
+        "hi",
+        "hello",
+        "在吗",
+        "谢谢",
+        "thanks",
+        "thank you",
+        "浣犲ソ",
+        "鍦ㄥ悧",
     }
+
+
+def _shopping_cue_terms() -> list[str]:
+    return [
+        "推荐",
+        "买",
+        "想买",
+        "想要",
+        "适合",
+        "预算",
+        "别太贵",
+        "不要太贵",
+        "recommend",
+        "buy",
+        "budget",
+        *QueryUnderstandingService.SHOPPING_KEYWORDS,
+    ]
+
+
+def _knowledge_cue_terms() -> list[str]:
+    return [
+        "为什么",
+        "怎么选",
+        "原理",
+        "解释",
+        "说说",
+        "主要看",
+        "哪些参数",
+        "why",
+        "explain",
+        *QueryUnderstandingService.KNOWLEDGE_KEYWORDS,
+    ]
+
+
+def _compare_cue_terms() -> list[str]:
+    return [
+        "第一个",
+        "第二个",
+        "这两个",
+        "对比",
+        "比较",
+        "哪个好",
+        "first",
+        "second",
+        "compare",
+        *QueryUnderstandingService.COMPARE_KEYWORDS,
+    ]
+
+
+def _contains_any_casefold(text: str, terms: list[str]) -> bool:
+    lowered = text.lower()
+    return any(str(term).lower() in lowered for term in terms if term)
 
 
 def build_llm_understanding_prompt(
@@ -1071,6 +1278,8 @@ def empty_memory_from_result(result: QueryUnderstandingResult) -> ShoppingMemory
 def _with_llm_failure(
     rule_result: QueryUnderstandingResult,
     error: str,
+    *,
+    decision: LLMFallbackDecision | None = None,
 ) -> QueryUnderstandingResult:
     reason = rule_result.reason or "rule_low_confidence"
     return rule_result.model_copy(
@@ -1078,6 +1287,8 @@ def _with_llm_failure(
             "llm_fallback_attempted": True,
             "llm_fallback_status": "failed",
             "llm_fallback_error": error,
+            "llm_fallback_should_call": bool(decision.should_call) if decision else True,
+            "llm_fallback_trigger_reasons": decision.reasons if decision else [],
             "source": "rule",
             "reason": f"{reason}_fallback_to_rule",
         }
@@ -1120,6 +1331,25 @@ def _last_products_payload(memory: ShoppingMemory) -> list[dict[str, str | None]
 
 def _looks_like_ambiguous_follow_up(query: str) -> bool:
     lower_query = query.lower()
+    if _contains_any_casefold(
+        lower_query,
+        [
+            "贵一点",
+            "便宜一点",
+            "便宜",
+            "更贵",
+            "更便宜",
+            "换一个",
+            "还有吗",
+            "再看看",
+            "刚才",
+            "那个",
+            "这两个",
+            "第一个",
+            "第二个",
+        ],
+    ):
+        return True
     phrases = [
         "贵一点",
         "便宜",
@@ -1142,6 +1372,10 @@ def _looks_like_ambiguous_follow_up(query: str) -> bool:
 
 
 def _contains_product_reference(query: str) -> bool:
+    if re.search(r"第[一二三四五六七八九\d]+个", query) or any(
+        term in query for term in ["刚才那个", "这两个", "这几款", "第一个", "第二个"]
+    ):
+        return True
     return bool(
         re.search(r"第[一二三四五六七八九\d]+个", query)
         or any(term in query for term in ["刚才那个", "这两个", "这几款"])
@@ -1226,6 +1460,18 @@ def _dedupe_short_terms(value: Any) -> list[str]:
         if term not in seen:
             terms.append(term)
             seen.add(term)
+    return terms
+
+
+def _dedupe_terms(value: Any) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for item in _list_of_str(value):
+        term = item.strip()
+        if not term or term in seen:
+            continue
+        terms.append(term)
+        seen.add(term)
     return terms
 
 

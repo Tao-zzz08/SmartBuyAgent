@@ -237,6 +237,8 @@ def _normalize_actual(actual: dict[str, Any]) -> dict[str, Any]:
         "compare_product_ids": _list_of_str(actual.get("compare_product_ids")),
         "referenced_product_indices": _list_of_int(actual.get("referenced_product_indices")),
         "llm_fallback_attempted": bool(actual.get("llm_fallback_attempted")),
+        "llm_fallback_should_call": actual.get("llm_fallback_should_call"),
+        "llm_fallback_trigger_reasons": _list_of_str(actual.get("llm_fallback_trigger_reasons")),
         "secondary_intents": _list_of_str(actual.get("secondary_intents")),
         "knowledge_questions": _list_of_str(actual.get("knowledge_questions")),
         "source": actual.get("source"),
@@ -288,7 +290,11 @@ def _evaluate_diagnostics(diagnostic: dict[str, Any], actual: dict[str, Any]) ->
     checks: dict[str, Any] = {}
     if "should_call_llm_fallback" in diagnostic:
         expected = bool(diagnostic.get("should_call_llm_fallback"))
-        actual_value = bool(actual.get("llm_fallback_attempted"))
+        actual_value = bool(
+            actual.get("llm_fallback_should_call")
+            if actual.get("llm_fallback_should_call") is not None
+            else actual.get("llm_fallback_attempted")
+        )
         checks["should_call_llm_fallback"] = {
             "expected": expected,
             "actual": actual_value,

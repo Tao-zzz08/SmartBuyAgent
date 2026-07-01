@@ -116,6 +116,24 @@ This script is independent from `run_eval_all.py` and is intended for
 QueryUnderstanding baseline analysis before changing fallback logic, dialog
 state, or multi-intent support.
 
+P0-2 adds a fallback trigger decision layer. The eval runner still disables
+real LLM calls by default, but it records a theoretical
+`llm_fallback_should_call` diagnostic based on the current fallback decision
+policy. This allows long-tail first-turn queries and multi-intent queries to be
+measured without calling external LLM services.
+
+The fallback trigger policy covers:
+
+- ambiguous follow-ups
+- product references
+- first-turn long-tail shopping queries
+- multi-intent queries
+- unknown-category purchase needs
+- low-confidence product-help queries
+
+Safety-boundary queries such as purchase/payment requests or skincare medical
+claims are excluded from LLM fallback trigger expansion.
+
 Run:
 
 ```bash

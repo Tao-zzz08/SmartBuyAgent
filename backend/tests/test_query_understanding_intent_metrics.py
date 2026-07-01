@@ -138,6 +138,25 @@ def test_diagnostic_checks_do_not_affect_passed() -> None:
     assert result["diagnostic_checks"]["should_call_llm_fallback"]["affects_case_pass"] is False
 
 
+def test_diagnostic_prefers_theoretical_fallback_should_call() -> None:
+    result = evaluate_intent_case(
+        case={
+            "id": "diagnostic_should_call",
+            "expected": {"intent": "shopping_guide"},
+            "diagnostic": {"should_call_llm_fallback": True},
+        },
+        actual={
+            "intent": "shopping_guide",
+            "llm_fallback_attempted": False,
+            "llm_fallback_should_call": True,
+        },
+    )
+
+    assert result["passed"] is True
+    assert result["diagnostic_checks"]["should_call_llm_fallback"]["actual"] is True
+    assert result["diagnostic_checks"]["should_call_llm_fallback"]["passed"] is True
+
+
 def test_aggregate_metrics_compute_field_accuracy_and_preference_f1() -> None:
     results = [
         evaluate_intent_case(

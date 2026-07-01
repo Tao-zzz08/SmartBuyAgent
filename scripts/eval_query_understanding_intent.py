@@ -29,6 +29,7 @@ from query_understanding_intent_metrics import (  # noqa: E402
 
 QueryUnderstandingService = None
 shopping_memory_from_dict = None
+decide_llm_fallback = None
 
 
 def load_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[dict[str, Any]]:
@@ -46,6 +47,13 @@ def run_eval(cases: list[dict[str, Any]]) -> dict[str, Any]:
         query = str(case.get("query") or "")
         actual_result = service.understand(query=query, previous_memory=previous_memory)
         actual = _actual_from_result(actual_result)
+        _add_theoretical_fallback_decision(
+            actual,
+            actual_result=actual_result,
+            query=query,
+            previous_memory=previous_memory,
+            service=service,
+        )
         results.append(evaluate_intent_case(case=case, actual=actual))
 
     passed_cases = sum(1 for result in results if result.get("passed"))
@@ -217,6 +225,43 @@ def _create_service() -> Any:
 
         QueryUnderstandingService = service_cls
     return QueryUnderstandingService(llm_enabled=False)
+
+
+def _add_theoretical_fallback_decision(
+    actual: dict[str, Any],
+    *,
+    actual_result: Any,
+    query: str,
+    previous_memory: Any,
+    service: Any,
+) -> None:
+    decision_fn = _fallback_decision_fn()
+    if decision_fn is None:
+        return
+    try:
+        decision = decision_fn(
+            rule_result=actual_result,
+            query=query,
+            previous_memory=previous_memory,
+            confidence_threshold=getattr(service, "llm_confidence_threshold", 0.75),
+            enabled=True,
+        )
+    except Exception:
+        return
+    actual["llm_fallback_should_call"] = bool(getattr(decision, "should_call", False))
+    actual["llm_fallback_trigger_reasons"] = list(getattr(decision, "reasons", []) or [])
+
+
+def _fallback_decision_fn() -> Any:
+    global decide_llm_fallback
+    if decide_llm_fallback is not None:
+        return decide_llm_fallback
+    try:
+        from app.chat.query_understanding import decide_llm_fallback as decision_fn
+    except Exception:
+        return None
+    decide_llm_fallback = decision_fn
+    return decision_fn
 
 
 def _shopping_memory_converter() -> Any:

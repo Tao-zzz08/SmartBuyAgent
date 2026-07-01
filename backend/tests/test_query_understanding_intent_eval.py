@@ -20,6 +20,7 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
     class FakeService:
         def __init__(self, *, llm_enabled: bool) -> None:
             seen["llm_enabled"] = llm_enabled
+            self.llm_confidence_threshold = 0.75
 
         def understand(self, *, query: str, previous_memory=None):
             if query == "增加到5000呢":
@@ -49,6 +50,14 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
             )
 
     monkeypatch.setattr(intent_eval, "QueryUnderstandingService", FakeService)
+    monkeypatch.setattr(
+        intent_eval,
+        "decide_llm_fallback",
+        lambda **kwargs: SimpleDecision(
+            should_call=kwargs["query"] == "增加到5000呢",
+            reasons=["ambiguous_follow_up"] if kwargs["query"] == "增加到5000呢" else ["strong_rule"],
+        ),
+    )
     cases = [
         {
             "id": "explicit",
@@ -95,6 +104,8 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
     assert output["summary"]["total_cases"] == 2
     assert output["summary"]["passed_cases"] == 2
     assert output["summary"]["metrics"]["intent_accuracy"] == 1.0
+    assert output["results"][1]["actual"]["llm_fallback_should_call"] is True
+    assert output["results"][1]["actual"]["llm_fallback_trigger_reasons"] == ["ambiguous_follow_up"]
     assert output["summary"]["diagnostic_metrics"]["multi_intent_case_count"] == 0
     json.dumps(output, ensure_ascii=False)
 
@@ -187,6 +198,7 @@ class FakeResult:
 class PassingFakeService:
     def __init__(self, *, llm_enabled: bool) -> None:
         self.llm_enabled = llm_enabled
+        self.llm_confidence_threshold = 0.75
 
     def understand(self, *, query: str, previous_memory=None):
         del query, previous_memory
@@ -202,3 +214,9 @@ class PassingFakeService:
                 "llm_fallback_attempted": False,
             }
         )
+
+
+class SimpleDecision:
+    def __init__(self, *, should_call: bool, reasons: list[str]) -> None:
+        self.should_call = should_call
+        self.reasons = reasons
