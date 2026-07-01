@@ -66,6 +66,8 @@ def test_write_report_files_creates_markdown_and_json(tmp_path: Path) -> None:
     report = run_eval_all.EvalReport(
         generated_at="2026-07-01T00:00:00+00:00",
         total_suites=2,
+        completed_suites=1,
+        skipped_suites=1,
         total_cases=2,
         passed_cases=1,
         failed_cases=1,
@@ -111,7 +113,11 @@ def test_write_report_files_creates_markdown_and_json(tmp_path: Path) -> None:
     assert "## Summary" in markdown
     assert "## Suite Summary" in markdown
     assert "## Failed Cases" in markdown
+    assert "Completed Suites" in markdown
+    assert "Skipped Suites" in markdown
     assert "insufficient_results" in markdown
+    assert details["completed_suites"] == 1
+    assert details["skipped_suites"] == 1
     assert details["total_cases"] == 2
     assert details["failed_cases"] == 1
     assert details["pass_rate"] == 0.5
@@ -137,12 +143,17 @@ def test_build_eval_report_respects_suite_filter(monkeypatch) -> None:
 
     assert seen == ["query_understanding"]
     assert report.total_suites == 1
+    assert report.completed_suites == 1
+    assert report.skipped_suites == 0
     assert report.total_cases == 1
     assert report.passed_cases == 1
     assert report.failed_cases == 0
 
 
-def test_main_writes_selected_suite_report(monkeypatch, tmp_path: Path) -> None:
+def test_fail_on_regression_passes_without_failed_or_skipped_suites(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     def fake_run_suite_result(suite: str) -> run_eval_all.EvalSuiteResult:
         return run_eval_all.EvalSuiteResult(
             suite=suite,
@@ -164,6 +175,7 @@ def test_main_writes_selected_suite_report(monkeypatch, tmp_path: Path) -> None:
             str(markdown_path),
             "--details",
             str(json_path),
+            "--fail-on-regression",
             "--quiet",
         ]
     )
@@ -173,13 +185,84 @@ def test_main_writes_selected_suite_report(monkeypatch, tmp_path: Path) -> None:
     assert json_path.exists()
     details = json.loads(json_path.read_text(encoding="utf-8"))
     assert [suite["suite"] for suite in details["suites"]] == ["query_understanding"]
+    assert details["completed_suites"] == 1
+    assert details["skipped_suites"] == 0
     assert details["passed_cases"] == 3
+
+
+def test_fail_on_regression_fails_when_suite_skipped(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    def fake_run_suite_result(suite: str) -> run_eval_all.EvalSuiteResult:
+        return run_eval_all.EvalSuiteResult(
+            suite=suite,
+            status="skipped",
+            reason="existing standalone runner unavailable: fake missing dependency",
+        )
+
+    monkeypatch.setattr(run_eval_all, "run_suite_result", fake_run_suite_result)
+    markdown_path = tmp_path / "reports" / "eval-report.md"
+    json_path = tmp_path / "reports" / "eval-details.json"
+
+    exit_code = run_eval_all.main(
+        [
+            "--suite",
+            "query_understanding",
+            "--output",
+            str(markdown_path),
+            "--details",
+            str(json_path),
+            "--fail-on-regression",
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 1
+    details = json.loads(json_path.read_text(encoding="utf-8"))
+    assert details["completed_suites"] == 0
+    assert details["skipped_suites"] == 1
+    assert details["failed_cases"] == 0
+
+
+def test_fail_on_regression_fails_when_cases_fail(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    def fake_run_suite_result(suite: str) -> run_eval_all.EvalSuiteResult:
+        return run_eval_all.EvalSuiteResult(
+            suite=suite,
+            total_cases=3,
+            passed_cases=2,
+            failed_cases=1,
+        )
+
+    monkeypatch.setattr(run_eval_all, "run_suite_result", fake_run_suite_result)
+    markdown_path = tmp_path / "reports" / "eval-report.md"
+    json_path = tmp_path / "reports" / "eval-details.json"
+
+    exit_code = run_eval_all.main(
+        [
+            "--suite",
+            "query_understanding",
+            "--output",
+            str(markdown_path),
+            "--details",
+            str(json_path),
+            "--fail-on-regression",
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 1
 
 
 def test_markdown_handles_no_failed_cases() -> None:
     report = run_eval_all.EvalReport(
         generated_at="2026-07-01T00:00:00+00:00",
         total_suites=1,
+        completed_suites=1,
+        skipped_suites=0,
         total_cases=1,
         passed_cases=1,
         failed_cases=0,

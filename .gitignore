@@ -9,3 +9,9 @@ data/*.db
 data/chroma/
 .pytest_cache/
 .DS_Store
+
+# Eval report outputs
+results/eval-report*.md
+results/eval-details*.json
+results/eval-*-report.md
+results/eval-*-details.json

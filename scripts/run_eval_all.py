@@ -66,6 +66,8 @@ class EvalSuiteResult:
 class EvalReport:
     generated_at: str
     total_suites: int
+    completed_suites: int
+    skipped_suites: int
     total_cases: int
     passed_cases: int
     failed_cases: int
@@ -79,9 +81,13 @@ def build_eval_report(suites: list[str] | None = None) -> EvalReport:
     total_cases = sum(result.total_cases for result in suite_results)
     passed_cases = sum(result.passed_cases for result in suite_results)
     failed_cases = sum(result.failed_cases for result in suite_results)
+    completed_suites = sum(1 for result in suite_results if result.status == "completed")
+    skipped_suites = sum(1 for result in suite_results if result.status == "skipped")
     return EvalReport(
         generated_at=datetime.now(timezone.utc).isoformat(),
         total_suites=len(suite_results),
+        completed_suites=completed_suites,
+        skipped_suites=skipped_suites,
         total_cases=total_cases,
         passed_cases=passed_cases,
         failed_cases=failed_cases,
@@ -177,6 +183,8 @@ def render_markdown(report: EvalReport) -> str:
         "| Metric | Value |",
         "|---|---:|",
         f"| Total Suites | {report.total_suites} |",
+        f"| Completed Suites | {report.completed_suites} |",
+        f"| Skipped Suites | {report.skipped_suites} |",
         f"| Total Cases | {report.total_cases} |",
         f"| Passed Cases | {report.passed_cases} |",
         f"| Failed Cases | {report.failed_cases} |",
@@ -441,7 +449,8 @@ def main(argv: list[str] | None = None) -> int:
             f"Pass rate: {_percent(report.pass_rate)}"
         )
 
-    if args.fail_on_regression and report.failed_cases:
+    has_skipped = any(suite.status == "skipped" for suite in report.suites)
+    if args.fail_on_regression and (report.failed_cases > 0 or has_skipped):
         return 1
     return 0
 
