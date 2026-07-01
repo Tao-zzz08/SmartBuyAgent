@@ -215,6 +215,7 @@ def _previous_memory(value: Any) -> Any:
         negative_preferences=list(value.get("negative_preferences") or []),
         last_product_ids=list(value.get("last_product_ids") or []),
         last_intent=value.get("last_intent"),
+        dialog_state=value.get("dialog_state"),
     )
 
 

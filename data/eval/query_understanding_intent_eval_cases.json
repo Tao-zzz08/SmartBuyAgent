@@ -370,5 +370,124 @@
       "knowledge_questions_contains": ["为什么鞋底纹路影响防滑"],
       "should_call_llm_fallback": true
     }
+  },
+  {
+    "id": "dialog_state_awaiting_budget_amount",
+    "case_group": "dialog_state_awaiting_budget",
+    "description": "上一轮追问预算时，预算短句应继承品类和偏好。",
+    "query": "3000以内",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": null, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": [],
+      "last_intent": "clarification",
+      "dialog_state": "awaiting_budget"
+    },
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "budget_max": 3000,
+      "preferences_contains": ["拍照"],
+      "is_follow_up": true,
+      "need_clarification": false,
+      "dialog_state": "awaiting_budget",
+      "next_dialog_state": "showing_products"
+    }
+  },
+  {
+    "id": "dialog_state_awaiting_category_phone",
+    "case_group": "dialog_state_awaiting_category",
+    "description": "上一轮追问品类时，品类短句应进入导购。",
+    "query": "手机",
+    "previous_memory": {
+      "category": null,
+      "budget": {"min": null, "max": 4000, "currency": "CNY"},
+      "preferences": [],
+      "negative_preferences": [],
+      "last_product_ids": [],
+      "last_intent": "clarification",
+      "dialog_state": "awaiting_category"
+    },
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "budget_max": 4000,
+      "is_follow_up": true,
+      "need_clarification": false,
+      "dialog_state": "awaiting_category",
+      "next_dialog_state": "showing_products"
+    }
+  },
+  {
+    "id": "dialog_state_showing_products_compare_first_second",
+    "case_group": "dialog_state_showing_products",
+    "description": "商品列表展示后，第一个和第二个应解析为比较。",
+    "query": "第一个和第二个哪个好",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 4000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002", "phone_003"],
+      "last_intent": "shopping_guide",
+      "dialog_state": "showing_products"
+    },
+    "expected": {
+      "intent": "compare",
+      "category": "phone",
+      "referenced_product_indices": [1, 2],
+      "compare_product_ids": ["phone_001", "phone_002"],
+      "is_follow_up": true,
+      "dialog_state": "showing_products",
+      "next_dialog_state": "comparing_products"
+    }
+  },
+  {
+    "id": "dialog_state_comparing_products_attribute_followup",
+    "case_group": "dialog_state_comparing_products",
+    "description": "比较阶段的属性追问应继续绑定上一轮比较对象。",
+    "query": "哪个更适合拍照",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 4000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002"],
+      "last_intent": "compare",
+      "dialog_state": "comparing_products"
+    },
+    "expected": {
+      "intent": "compare",
+      "category": "phone",
+      "compare_product_ids": ["phone_001", "phone_002"],
+      "is_follow_up": true,
+      "dialog_state": "comparing_products",
+      "next_dialog_state": "comparing_products"
+    }
+  },
+  {
+    "id": "dialog_state_decision_confirmation_safe",
+    "case_group": "dialog_state_decision_confirmation",
+    "description": "就第一个吧只能作为安全确认/澄清，不能引入购买流程。",
+    "query": "就第一个吧",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 4000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002"],
+      "last_intent": "shopping_guide",
+      "dialog_state": "showing_products"
+    },
+    "expected": {
+      "intent_in": ["clarification", "product_knowledge", "shopping_guide"],
+      "category": "phone",
+      "referenced_product_indices": [1],
+      "preferences_not_contains": ["下单", "支付", "购物车"],
+      "dialog_state": "showing_products",
+      "next_dialog_state": "showing_products"
+    }
   }
 ]

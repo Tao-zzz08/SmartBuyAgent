@@ -25,6 +25,7 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
         def understand(self, *, query: str, previous_memory=None):
             if query == "增加到5000呢":
                 seen["previous_memory_category"] = previous_memory.category
+                seen["previous_memory_dialog_state"] = previous_memory.dialog_state
                 return FakeResult(
                     {
                         "intent": "shopping_guide",
@@ -34,6 +35,8 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
                         "is_follow_up": True,
                         "need_clarification": False,
                         "llm_fallback_attempted": False,
+                        "dialog_state": "awaiting_budget",
+                        "next_dialog_state": "showing_products",
                     }
                 )
             return FakeResult(
@@ -83,6 +86,7 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
                 "negative_preferences": [],
                 "last_product_ids": ["p1", "p2"],
                 "last_intent": "shopping_guide",
+                "dialog_state": "awaiting_budget",
             },
             "expected": {
                 "intent": "shopping_guide",
@@ -90,6 +94,8 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
                 "budget_max": 5000,
                 "preferences_contains": ["拍照"],
                 "is_follow_up": True,
+                "dialog_state": "awaiting_budget",
+                "next_dialog_state": "showing_products",
             },
         },
     ]
@@ -101,9 +107,14 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
 
     assert seen["llm_enabled"] is False
     assert seen["previous_memory_category"] == "phone"
+    assert seen["previous_memory_dialog_state"] == "awaiting_budget"
     assert output["summary"]["total_cases"] == 2
     assert output["summary"]["passed_cases"] == 2
     assert output["summary"]["metrics"]["intent_accuracy"] == 1.0
+    assert output["summary"]["metrics"]["dialog_state_accuracy"] == 1.0
+    assert output["summary"]["metrics"]["next_dialog_state_accuracy"] == 1.0
+    assert output["results"][1]["actual"]["dialog_state"] == "awaiting_budget"
+    assert output["results"][1]["actual"]["next_dialog_state"] == "showing_products"
     assert output["results"][1]["actual"]["llm_fallback_should_call"] is True
     assert output["results"][1]["actual"]["llm_fallback_trigger_reasons"] == ["ambiguous_follow_up"]
     assert output["summary"]["diagnostic_metrics"]["multi_intent_case_count"] == 0

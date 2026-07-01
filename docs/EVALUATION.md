@@ -134,6 +134,24 @@ The fallback trigger policy covers:
 Safety-boundary queries such as purchase/payment requests or skincare medical
 claims are excluded from LLM fallback trigger expansion.
 
+P0-3 adds lightweight dialog-state awareness. QueryUnderstanding now records
+the state used to interpret the current turn and the inferred next state, such
+as `awaiting_budget`, `awaiting_category`, `showing_products`,
+`comparing_products`, and `answering_knowledge`.
+
+The intent eval suite reports dialog-state metrics:
+
+- dialog_state_accuracy
+- next_dialog_state_accuracy
+- dialog_state_in_accuracy
+
+These metrics help verify that short follow-ups such as "3000以内", "手机",
+"第一个和第二个哪个好", and "就第一个吧" are interpreted differently depending
+on the previous conversation stage.
+
+Dialog state is not a purchase workflow. The project still does not support
+cart, order, payment, or checkout actions.
+
 Run:
 
 ```bash

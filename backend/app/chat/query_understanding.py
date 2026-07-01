@@ -21,6 +21,7 @@ from app.chat.shopping_memory import (
     merge_shopping_memory,
     merge_turns_to_memory,
     parse_budget_max,
+    normalize_dialog_state,
     shopping_memory_from_dict,
 )
 from app.services.llm import BaseLLMService, LLMMessage, get_llm_service
@@ -109,6 +110,9 @@ class QueryUnderstandingResult(BaseModel):
     llm_fallback_result: dict[str, Any] | None = None
     llm_fallback_should_call: bool = False
     llm_fallback_trigger_reasons: list[str] = Field(default_factory=list)
+    dialog_state: str | None = None
+    next_dialog_state: str | None = None
+    dialog_state_reason: str = ""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -160,6 +164,9 @@ class QueryUnderstandingResult(BaseModel):
             data.get("referenced_product_indices")
         )
         data["reason"] = str(data.get("reason") or "")
+        data["dialog_state"] = normalize_dialog_state(data.get("dialog_state"))
+        data["next_dialog_state"] = normalize_dialog_state(data.get("next_dialog_state"))
+        data["dialog_state_reason"] = str(data.get("dialog_state_reason") or "")
         if "need_clarification" not in data:
             data["need_clarification"] = data["intent"] == "clarification"
         return data
@@ -179,6 +186,8 @@ class QueryUnderstandingResult(BaseModel):
         self.preferences = [
             item for item in self.preferences if item not in self.negative_preferences
         ]
+        self.dialog_state = normalize_dialog_state(self.dialog_state)
+        self.next_dialog_state = normalize_dialog_state(self.next_dialog_state)
 
         if self.shopping_memory is None:
             self.shopping_memory = self.to_shopping_memory().to_dict()
@@ -214,6 +223,7 @@ class QueryUnderstandingResult(BaseModel):
             negative_preferences=list(self.negative_preferences),
             last_product_ids=last_product_ids,
             last_intent=self.intent,
+            dialog_state=self.next_dialog_state or self.dialog_state,
         )
 
     def to_trace_dict(self) -> dict[str, Any]:
@@ -244,6 +254,9 @@ class QueryUnderstandingResult(BaseModel):
             "llm_fallback_result": self.llm_fallback_result,
             "llm_fallback_should_call": self.llm_fallback_should_call,
             "llm_fallback_trigger_reasons": list(self.llm_fallback_trigger_reasons),
+            "dialog_state": self.dialog_state,
+            "next_dialog_state": self.next_dialog_state,
+            "dialog_state_reason": self.dialog_state_reason,
         }
 
 
@@ -324,6 +337,19 @@ class CategoryRule:
 class LLMFallbackDecision:
     should_call: bool
     reasons: list[str] = dataclass_field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DialogStateAdjustment:
+    intent: str
+    memory: ShoppingMemory
+    is_follow_up: bool
+    need_clarification: bool
+    compare_product_ids: list[str] = dataclass_field(default_factory=list)
+    referenced_product_indices: list[int] = dataclass_field(default_factory=list)
+    next_dialog_state: str | None = None
+    reason: str = ""
+    clarification_question: str | None = None
 
 
 class QueryUnderstandingService:
@@ -474,6 +500,8 @@ class QueryUnderstandingService:
 
         memory = extract_memory_from_query(normalized_query)
         category_value = memory.category
+        if category_value is None:
+            category_value = _category_from_dialog_query(normalized_query)
         category = (
             CategoryRule(
                 category_id=category_to_id(category_value) or "",
@@ -491,6 +519,8 @@ class QueryUnderstandingService:
         budget_min, budget_max = self._parse_budget(lower_query)
         if budget_max is None:
             budget_max = memory.budget.max
+        if budget_max is None:
+            budget_max = _budget_max_from_dialog_query(normalized_query)
         preferences = self._extract_preferences(lower_query)
         if memory.preferences:
             preferences = memory.preferences
@@ -510,6 +540,7 @@ class QueryUnderstandingService:
         previous = previous_memory or (
             merge_turns_to_memory(list(history or [])) if history else None
         )
+        inferred_dialog_state = infer_dialog_state(previous)
         resolved_memory = current_memory
         is_follow_up = False
         reason = "direct_rule"
@@ -570,6 +601,45 @@ class QueryUnderstandingService:
                 need_clarification = False
                 memory_updated = True
 
+        dialog_adjustment = apply_dialog_state_hints(
+            normalized_query=normalized_query,
+            current_memory=current_memory,
+            resolved_memory=resolved_memory,
+            previous_memory=previous,
+            inferred_state=inferred_dialog_state,
+            intent=intent,
+            need_clarification=need_clarification,
+            compare_product_ids=compare_product_ids,
+            referenced_product_indices=referenced_product_indices,
+        )
+        if dialog_adjustment is not None:
+            resolved_memory = dialog_adjustment.memory
+            is_follow_up = is_follow_up or dialog_adjustment.is_follow_up
+            intent = dialog_adjustment.intent
+            need_clarification = dialog_adjustment.need_clarification
+            compare_product_ids = dialog_adjustment.compare_product_ids
+            referenced_product_indices = dialog_adjustment.referenced_product_indices
+            reason = dialog_adjustment.reason or reason
+            memory_updated = resolved_memory.has_shopping_context()
+            effective_query = (
+                build_effective_query(resolved_memory)
+                if intent in {"shopping_guide", "compare"} and resolved_memory.category
+                else raw_query
+            )
+
+        next_dialog_state = infer_next_dialog_state(
+            intent=intent,
+            category=resolved_memory.category or category_value,
+            budget_max=resolved_memory.budget.max,
+            override=dialog_adjustment.next_dialog_state if dialog_adjustment else None,
+        )
+        dialog_state_reason = dialog_adjustment.reason if dialog_adjustment else ""
+        resolved_memory = _memory_with_dialog_state(
+            resolved_memory,
+            dialog_state=next_dialog_state,
+            last_intent=intent,
+        )
+
         confidence = _confidence_for_result(
             intent=intent,
             is_follow_up=is_follow_up,
@@ -603,9 +673,12 @@ class QueryUnderstandingService:
             memory_updated=memory_updated,
             need_clarification=need_clarification,
             clarification_question=self.CLARIFICATION_QUESTION
-            if need_clarification
-            else None,
+            if need_clarification and not (dialog_adjustment and dialog_adjustment.clarification_question)
+            else (dialog_adjustment.clarification_question if dialog_adjustment else None),
             shopping_memory=resolved_memory.to_dict(),
+            dialog_state=inferred_dialog_state,
+            next_dialog_state=next_dialog_state,
+            dialog_state_reason=dialog_state_reason,
         )
         return self._apply_llm_fallback_if_needed(
             rule_result=rule_result,
@@ -627,6 +700,9 @@ class QueryUnderstandingService:
             clarification_question=self.CLARIFICATION_QUESTION,
             confidence=0.3,
             reason="empty_query",
+            dialog_state="idle",
+            next_dialog_state="awaiting_category",
+            dialog_state_reason="empty_query",
         )
 
     def _detect_category(self, lower_query: str) -> CategoryRule | None:
@@ -900,6 +976,352 @@ def decide_llm_fallback(
         return LLMFallbackDecision(False, ["strong_rule"])
 
     return LLMFallbackDecision(False, ["no_trigger"])
+
+
+def infer_dialog_state(previous_memory: ShoppingMemory | None) -> str:
+    if previous_memory is None:
+        return "idle"
+    explicit_state = normalize_dialog_state(previous_memory.dialog_state)
+    if explicit_state:
+        return explicit_state
+    if previous_memory.last_intent == "compare":
+        return "comparing_products"
+    if previous_memory.last_intent == "product_knowledge":
+        return "answering_knowledge"
+    if previous_memory.last_product_ids:
+        return "showing_products"
+    if previous_memory.last_intent == "clarification" and not previous_memory.category:
+        return "awaiting_category"
+    return "idle"
+
+
+def infer_next_dialog_state(
+    *,
+    intent: str,
+    category: str | None,
+    budget_max: int | None,
+    override: str | None = None,
+) -> str:
+    override_state = normalize_dialog_state(override)
+    if override_state:
+        return override_state
+    if intent == "clarification" and not category:
+        return "awaiting_category"
+    if intent == "clarification" and category and budget_max is None:
+        return "awaiting_budget"
+    if intent == "shopping_guide":
+        return "showing_products"
+    if intent == "compare":
+        return "comparing_products"
+    if intent == "product_knowledge":
+        return "answering_knowledge"
+    if intent == "chitchat":
+        return "idle"
+    return "idle"
+
+
+def apply_dialog_state_hints(
+    *,
+    normalized_query: str,
+    current_memory: ShoppingMemory,
+    resolved_memory: ShoppingMemory,
+    previous_memory: ShoppingMemory | None,
+    inferred_state: str,
+    intent: str,
+    need_clarification: bool,
+    compare_product_ids: list[str],
+    referenced_product_indices: list[int],
+) -> DialogStateAdjustment | None:
+    if previous_memory is None:
+        return None
+
+    state = normalize_dialog_state(inferred_state) or "idle"
+    explicit_category = current_memory.category or _category_from_dialog_query(normalized_query)
+    budget_max = current_memory.budget.max or _budget_max_from_dialog_query(normalized_query)
+
+    if state == "awaiting_budget" and previous_memory.category and budget_max is not None:
+        memory = merge_shopping_memory(
+            previous_memory,
+            ShoppingMemory(
+                category=previous_memory.category,
+                budget=ShoppingBudget(
+                    min=current_memory.budget.min,
+                    max=budget_max,
+                    currency=current_memory.budget.currency or "CNY",
+                ),
+                preferences=current_memory.preferences,
+                negative_preferences=current_memory.negative_preferences,
+                last_product_ids=previous_memory.last_product_ids,
+                last_intent="shopping_guide",
+            ),
+        )
+        return DialogStateAdjustment(
+            intent="shopping_guide",
+            memory=memory,
+            is_follow_up=True,
+            need_clarification=False,
+            next_dialog_state="showing_products",
+            reason="awaiting_budget_filled",
+        )
+
+    if state == "awaiting_category" and explicit_category:
+        compatible_previous = _compatible_previous_memory(previous_memory, explicit_category)
+        memory = merge_shopping_memory(
+            compatible_previous,
+            ShoppingMemory(
+                category=explicit_category,
+                budget=current_memory.budget,
+                preferences=current_memory.preferences,
+                negative_preferences=current_memory.negative_preferences,
+                last_intent="shopping_guide",
+            ),
+        )
+        return DialogStateAdjustment(
+            intent="shopping_guide",
+            memory=memory,
+            is_follow_up=True,
+            need_clarification=False,
+            next_dialog_state="showing_products",
+            reason="awaiting_category_filled",
+        )
+
+    if state == "showing_products" and previous_memory.last_product_ids:
+        indices = resolve_referenced_product_indices(
+            normalized_query,
+            max_count=len(previous_memory.last_product_ids),
+        )
+        if _looks_like_decision_confirmation(normalized_query):
+            memory = _memory_with_dialog_state(
+                merge_shopping_memory(previous_memory, current_memory),
+                dialog_state="showing_products",
+                last_intent="clarification",
+            )
+            return DialogStateAdjustment(
+                intent="clarification",
+                memory=memory,
+                is_follow_up=True,
+                need_clarification=True,
+                referenced_product_indices=indices,
+                next_dialog_state="showing_products",
+                reason="decision_confirmation_without_purchase",
+                clarification_question=(
+                    "我可以继续帮你比较参数或说明这款是否适合你，但不能直接下单。"
+                    "你想了解哪方面？"
+                ),
+            )
+        if indices and _looks_like_compare_query(normalized_query):
+            selected_ids = _product_ids_for_indices(previous_memory.last_product_ids, indices)
+            memory = _memory_with_dialog_state(
+                merge_shopping_memory(previous_memory, current_memory),
+                dialog_state="comparing_products",
+                last_intent="compare",
+            )
+            return DialogStateAdjustment(
+                intent="compare",
+                memory=memory,
+                is_follow_up=True,
+                need_clarification=False,
+                compare_product_ids=selected_ids,
+                referenced_product_indices=indices,
+                next_dialog_state="comparing_products",
+                reason="ordinal_compare_from_showing_products",
+            )
+        if indices or _looks_like_single_product_attribute_query(normalized_query):
+            inferred_indices = indices or ([1] if _contains_demonstrative_reference(normalized_query) else [])
+            memory = _memory_with_dialog_state(
+                merge_shopping_memory(previous_memory, current_memory),
+                dialog_state="answering_knowledge",
+                last_intent="product_knowledge",
+            )
+            return DialogStateAdjustment(
+                intent="product_knowledge",
+                memory=memory,
+                is_follow_up=True,
+                need_clarification=False,
+                referenced_product_indices=inferred_indices,
+                next_dialog_state="answering_knowledge",
+                reason="single_product_attribute_follow_up",
+            )
+
+    if (
+        state == "comparing_products"
+        and len(previous_memory.last_product_ids) >= 2
+        and _looks_like_compare_attribute_followup(normalized_query)
+    ):
+        ids = previous_memory.last_product_ids[:2]
+        memory = _memory_with_dialog_state(
+            merge_shopping_memory(previous_memory, current_memory),
+            dialog_state="comparing_products",
+            last_intent="compare",
+        )
+        return DialogStateAdjustment(
+            intent="compare",
+            memory=memory,
+            is_follow_up=True,
+            need_clarification=False,
+            compare_product_ids=ids,
+            referenced_product_indices=[1, 2],
+            next_dialog_state="comparing_products",
+            reason="compare_attribute_follow_up",
+        )
+
+    del intent, need_clarification, compare_product_ids, referenced_product_indices
+    return None
+
+
+def resolve_referenced_product_indices(query: str, max_count: int) -> list[int]:
+    if max_count <= 0:
+        return []
+    lowered = query.lower()
+    indices: list[int] = []
+    ordinal_patterns = [
+        (1, [r"第\s*一\s*[个款台件]?", r"第\s*1\s*[个款台件]?", r"\b1\s*[个款台件]"]),
+        (2, [r"第\s*二\s*[个款台件]?", r"第\s*2\s*[个款台件]?", r"\b2\s*[个款台件]"]),
+        (3, [r"第\s*三\s*[个款台件]?", r"第\s*3\s*[个款台件]?", r"\b3\s*[个款台件]"]),
+    ]
+    for index, patterns in ordinal_patterns:
+        if index <= max_count and any(re.search(pattern, lowered) for pattern in patterns):
+            indices.append(index)
+    if not indices and "这两个" in lowered and max_count >= 2:
+        indices.extend([1, 2])
+    if not indices and ("这几款" in lowered or "这几个" in lowered):
+        indices.extend(range(1, min(max_count, 3) + 1))
+    return _dedupe_ints(indices)
+
+
+def _category_from_dialog_query(query: str) -> str | None:
+    lowered = query.lower()
+    if any(term in lowered for term in ["手机", "iphone", "安卓", "拍照手机"]):
+        return "phone"
+    if any(term in lowered for term in ["鞋", "鞋子", "通勤鞋", "高跟", "运动鞋"]):
+        return "shoes"
+    if any(term in lowered for term in ["护肤", "敏感肌", "保湿", "美白", "面霜", "精华"]):
+        return "skincare"
+    return None
+
+
+def _budget_max_from_dialog_query(query: str) -> int | None:
+    normalized = query.strip().lower().replace(",", "")
+    has_budget_cue = any(
+        term in normalized
+        for term in ["预算", "以内", "以下", "不超过", "元", "块", "k", "千", "万"]
+    )
+    is_bare_amount = re.fullmatch(r"\d+(?:\.\d+)?\s*(?:k|千|万)?", normalized) is not None
+    if not has_budget_cue and not is_bare_amount:
+        return None
+    match = re.search(
+        r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>k|千|万)?\s*(?:元|块)?\s*(?:以内|以下|内)?",
+        normalized,
+    )
+    if not match:
+        return None
+    value = float(match.group("value"))
+    unit = match.group("unit")
+    if unit in {"k", "千"}:
+        value *= 1000
+    elif unit == "万":
+        value *= 10000
+    amount = int(value)
+    return amount if 0 < amount <= 100000 else None
+
+
+def _compatible_previous_memory(
+    previous_memory: ShoppingMemory,
+    category: str,
+) -> ShoppingMemory:
+    if previous_memory.category and previous_memory.category != category:
+        return ShoppingMemory(
+            category=None,
+            budget=previous_memory.budget,
+            preferences=[],
+            negative_preferences=previous_memory.negative_preferences,
+            last_product_ids=[],
+            last_intent=previous_memory.last_intent,
+            dialog_state=previous_memory.dialog_state,
+        )
+    return previous_memory
+
+
+def _memory_with_dialog_state(
+    memory: ShoppingMemory,
+    *,
+    dialog_state: str | None,
+    last_intent: str | None = None,
+) -> ShoppingMemory:
+    return ShoppingMemory(
+        category=memory.category,
+        budget=memory.budget,
+        preferences=list(memory.preferences),
+        negative_preferences=list(memory.negative_preferences),
+        last_product_ids=list(memory.last_product_ids),
+        last_intent=last_intent or memory.last_intent,
+        dialog_state=normalize_dialog_state(dialog_state),
+    )
+
+
+def _product_ids_for_indices(product_ids: list[str], indices: list[int]) -> list[str]:
+    selected: list[str] = []
+    for index in indices:
+        position = index - 1
+        if 0 <= position < len(product_ids):
+            selected.append(product_ids[position])
+    return selected
+
+
+def _looks_like_compare_query(query: str) -> bool:
+    return _contains_any_casefold(
+        query,
+        ["哪个好", "哪个更好", "哪个更适合", "对比", "比较", "比一下", "差别"],
+    )
+
+
+def _looks_like_single_product_attribute_query(query: str) -> bool:
+    return _contains_any_casefold(
+        query,
+        [
+            "怎么样",
+            "支持",
+            "适合",
+            "防水",
+            "续航",
+            "拍照",
+            "防滑",
+            "敏感肌",
+            "参数",
+            "性能",
+        ],
+    ) and (
+        bool(resolve_referenced_product_indices(query, max_count=3))
+        or _contains_demonstrative_reference(query)
+    )
+
+
+def _looks_like_decision_confirmation(query: str) -> bool:
+    return _contains_any_casefold(
+        query,
+        ["就这个吧", "就它吧", "选这个", "选第一个", "就第一个吧", "就第二个吧"],
+    )
+
+
+def _looks_like_compare_attribute_followup(query: str) -> bool:
+    return _contains_any_casefold(
+        query,
+        ["哪个更适合", "哪个更好", "哪个好", "拍照", "续航", "防滑", "更适合"],
+    )
+
+
+def _contains_demonstrative_reference(query: str) -> bool:
+    return _contains_any_casefold(query, ["这个", "这款", "它", "那个", "那款"])
+
+
+def _dedupe_ints(values: list[int]) -> list[int]:
+    output: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        if value not in seen:
+            output.append(value)
+            seen.add(value)
+    return output
 
 
 def _looks_like_safety_boundary_query(query: str) -> bool:
@@ -1227,6 +1649,17 @@ def merge_rule_and_llm_understanding(
         last_intent=intent,
     )
     resolved_memory = merge_shopping_memory(previous_memory, current_memory)
+    next_dialog_state = infer_next_dialog_state(
+        intent=intent,
+        category=resolved_memory.category,
+        budget_max=resolved_memory.budget.max,
+        override=rule_result.next_dialog_state,
+    )
+    resolved_memory = _memory_with_dialog_state(
+        resolved_memory,
+        dialog_state=next_dialog_state,
+        last_intent=intent,
+    )
     effective_query = (
         build_effective_query(resolved_memory)
         if resolved_memory.category and intent in {"shopping_guide", "compare"}
@@ -1266,6 +1699,9 @@ def merge_rule_and_llm_understanding(
         if need_clarification
         else None,
         shopping_memory=resolved_memory.to_dict(),
+        dialog_state=rule_result.dialog_state,
+        next_dialog_state=next_dialog_state,
+        dialog_state_reason=rule_result.dialog_state_reason,
     )
 
 

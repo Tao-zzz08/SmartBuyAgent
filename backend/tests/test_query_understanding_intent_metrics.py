@@ -116,6 +116,61 @@ def test_compare_reference_fields_require_exact_match() -> None:
     assert result["checks"]["compare_product_ids"] is True
 
 
+def test_dialog_state_fields_can_pass() -> None:
+    result = evaluate_intent_case(
+        case={
+            "id": "dialog_state_ok",
+            "expected": {
+                "dialog_state": "showing_products",
+                "next_dialog_state": "comparing_products",
+            },
+        },
+        actual={
+            "dialog_state": "showing_products",
+            "next_dialog_state": "comparing_products",
+        },
+    )
+
+    assert result["passed"] is True
+    assert result["checks"]["dialog_state"] is True
+    assert result["checks"]["next_dialog_state"] is True
+
+
+def test_dialog_state_mismatch_fails_with_reason() -> None:
+    result = evaluate_intent_case(
+        case={
+            "id": "dialog_state_bad",
+            "expected": {
+                "dialog_state": "showing_products",
+                "next_dialog_state": "comparing_products",
+            },
+        },
+        actual={
+            "dialog_state": "idle",
+            "next_dialog_state": "showing_products",
+        },
+    )
+
+    assert result["passed"] is False
+    assert any("dialog_state_mismatch" in reason for reason in result["failure_reasons"])
+    assert any("next_dialog_state_mismatch" in reason for reason in result["failure_reasons"])
+
+
+def test_dialog_state_in_allows_any_listed_state() -> None:
+    result = evaluate_intent_case(
+        case={
+            "id": "dialog_state_in",
+            "expected": {
+                "dialog_state_in": ["showing_products", "comparing_products"],
+            },
+        },
+        actual={"dialog_state": "comparing_products"},
+    )
+
+    assert result["passed"] is True
+    assert result["checks"]["dialog_state_in"] is True
+
+
 def test_diagnostic_checks_do_not_affect_passed() -> None:
     result = evaluate_intent_case(
         case={
@@ -200,9 +255,47 @@ def test_aggregate_metrics_compute_field_accuracy_and_preference_f1() -> None:
     assert metrics["intent_accuracy"] == 0.5
     assert metrics["category_accuracy"] == 1.0
     assert metrics["budget_max_accuracy"] == 1.0
+    assert metrics["dialog_state_accuracy"] is None
+    assert metrics["next_dialog_state_accuracy"] is None
     assert metrics["preference_precision"] == 0.6667
     assert metrics["preference_recall"] == 0.6667
     assert metrics["preference_f1"] == 0.6667
+
+
+def test_aggregate_dialog_state_metrics() -> None:
+    results = [
+        evaluate_intent_case(
+            case={
+                "id": "one",
+                "expected": {
+                    "dialog_state": "showing_products",
+                    "next_dialog_state": "comparing_products",
+                },
+            },
+            actual={
+                "dialog_state": "showing_products",
+                "next_dialog_state": "comparing_products",
+            },
+        ),
+        evaluate_intent_case(
+            case={
+                "id": "two",
+                "expected": {
+                    "dialog_state": "showing_products",
+                    "next_dialog_state": "showing_products",
+                },
+            },
+            actual={
+                "dialog_state": "idle",
+                "next_dialog_state": "showing_products",
+            },
+        ),
+    ]
+
+    metrics = aggregate_intent_metrics(results)
+
+    assert metrics["dialog_state_accuracy"] == 0.5
+    assert metrics["next_dialog_state_accuracy"] == 1.0
 
 
 def test_aggregate_metrics_return_none_when_no_applicable_fields() -> None:
@@ -216,6 +309,8 @@ def test_aggregate_metrics_return_none_when_no_applicable_fields() -> None:
     assert metrics["intent_accuracy"] is None
     assert metrics["category_accuracy"] is None
     assert metrics["budget_max_accuracy"] is None
+    assert metrics["dialog_state_accuracy"] is None
+    assert metrics["next_dialog_state_accuracy"] is None
     assert metrics["preference_precision"] is None
     assert metrics["negative_preference_precision"] is None
 

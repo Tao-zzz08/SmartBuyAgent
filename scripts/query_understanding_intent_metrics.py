@@ -13,6 +13,9 @@ FIELD_METRICS = [
     "clarification_accuracy",
     "referenced_indices_accuracy",
     "compare_product_ids_accuracy",
+    "dialog_state_accuracy",
+    "next_dialog_state_accuracy",
+    "dialog_state_in_accuracy",
     "forbidden_preference_violation_rate",
 ]
 
@@ -46,6 +49,27 @@ def evaluate_intent_case(
         if not checks["category"]:
             failure_reasons.append(
                 f"category_mismatch: expected {expected.get('category')}, got {normalized_actual.get('category')}"
+            )
+
+    if "dialog_state" in expected:
+        checks["dialog_state"] = normalized_actual.get("dialog_state") == expected.get("dialog_state")
+        if not checks["dialog_state"]:
+            failure_reasons.append(
+                f"dialog_state_mismatch: expected {expected.get('dialog_state')}, got {normalized_actual.get('dialog_state')}"
+            )
+    elif "dialog_state_in" in expected:
+        allowed_states = [str(value) for value in expected.get("dialog_state_in") or []]
+        checks["dialog_state_in"] = normalized_actual.get("dialog_state") in allowed_states
+        if not checks["dialog_state_in"]:
+            failure_reasons.append(
+                f"dialog_state_not_allowed: expected one of {allowed_states}, got {normalized_actual.get('dialog_state')}"
+            )
+
+    if "next_dialog_state" in expected:
+        checks["next_dialog_state"] = normalized_actual.get("next_dialog_state") == expected.get("next_dialog_state")
+        if not checks["next_dialog_state"]:
+            failure_reasons.append(
+                f"next_dialog_state_mismatch: expected {expected.get('next_dialog_state')}, got {normalized_actual.get('next_dialog_state')}"
             )
 
     for field_name in ["budget_min", "budget_max"]:
@@ -144,6 +168,9 @@ def aggregate_intent_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         "clarification_accuracy": _accuracy(results, "need_clarification"),
         "referenced_indices_accuracy": _accuracy(results, "referenced_product_indices"),
         "compare_product_ids_accuracy": _accuracy(results, "compare_product_ids"),
+        "dialog_state_accuracy": _accuracy(results, "dialog_state"),
+        "next_dialog_state_accuracy": _accuracy(results, "next_dialog_state"),
+        "dialog_state_in_accuracy": _accuracy(results, "dialog_state_in"),
         "forbidden_preference_violation_rate": _violation_rate(
             results,
             ["preferences_not_contains", "negative_preferences_not_contains"],
@@ -239,6 +266,9 @@ def _normalize_actual(actual: dict[str, Any]) -> dict[str, Any]:
         "llm_fallback_attempted": bool(actual.get("llm_fallback_attempted")),
         "llm_fallback_should_call": actual.get("llm_fallback_should_call"),
         "llm_fallback_trigger_reasons": _list_of_str(actual.get("llm_fallback_trigger_reasons")),
+        "dialog_state": actual.get("dialog_state"),
+        "next_dialog_state": actual.get("next_dialog_state"),
+        "dialog_state_reason": actual.get("dialog_state_reason"),
         "secondary_intents": _list_of_str(actual.get("secondary_intents")),
         "knowledge_questions": _list_of_str(actual.get("knowledge_questions")),
         "source": actual.get("source"),

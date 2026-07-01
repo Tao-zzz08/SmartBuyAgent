@@ -7,6 +7,14 @@ from typing import Any
 
 
 VALID_CATEGORIES = {"phone", "shoes", "skincare"}
+VALID_DIALOG_STATES = {
+    "idle",
+    "awaiting_category",
+    "awaiting_budget",
+    "showing_products",
+    "comparing_products",
+    "answering_knowledge",
+}
 BUDGET_MIN_VALUE = 1
 BUDGET_MAX_VALUE = 100000
 
@@ -142,6 +150,7 @@ class ShoppingMemory:
     negative_preferences: list[str] = field(default_factory=list)
     last_product_ids: list[str] = field(default_factory=list)
     last_intent: str | None = None
+    dialog_state: str | None = None
 
     def has_shopping_context(self) -> bool:
         return bool(
@@ -150,6 +159,7 @@ class ShoppingMemory:
             or self.negative_preferences
             or self.last_product_ids
             or self.last_intent == "shopping_guide"
+            or (self.dialog_state and self.dialog_state != "idle")
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -158,6 +168,11 @@ class ShoppingMemory:
 
 def empty_shopping_memory() -> ShoppingMemory:
     return ShoppingMemory()
+
+
+def normalize_dialog_state(value: Any) -> str | None:
+    state = str(value or "").strip()
+    return state if state in VALID_DIALOG_STATES else None
 
 
 def category_to_id(category: str | None) -> str | None:
@@ -272,6 +287,8 @@ def merge_shopping_memory(
         negative_preferences=negative_preferences,
         last_product_ids=current.last_product_ids or previous.last_product_ids,
         last_intent=_merge_last_intent(previous.last_intent, current.last_intent),
+        dialog_state=normalize_dialog_state(current.dialog_state)
+        or normalize_dialog_state(previous.dialog_state),
     )
 
 
@@ -448,6 +465,7 @@ def shopping_memory_from_dict(value: dict[str, Any]) -> ShoppingMemory:
         negative_preferences=_list_from_any(value.get("negative_preferences")),
         last_product_ids=_list_from_any(value.get("last_product_ids")),
         last_intent=str(value.get("last_intent")) if value.get("last_intent") else None,
+        dialog_state=normalize_dialog_state(value.get("dialog_state")),
     )
 
 
