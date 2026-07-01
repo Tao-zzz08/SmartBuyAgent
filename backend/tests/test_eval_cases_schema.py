@@ -24,6 +24,7 @@ def test_all_eval_case_files_have_valid_schema() -> None:
         assert cases, filename
         for case in cases:
             assert case.get("id"), filename
+            _assert_no_placeholder_tokens(case, case["id"])
             assert case.get("description") or case.get("query"), case.get("id")
             if case.get("turns"):
                 for turn in case["turns"]:
@@ -86,3 +87,8 @@ def _real_product_ids_from_processed_data() -> set[str]:
         digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
         product_ids.add(f"real_{record.get('category')}_{digest}"[:64])
     return product_ids
+
+
+def _assert_no_placeholder_tokens(value: object, case_id: str) -> None:
+    text = json.dumps(value, ensure_ascii=False)
+    assert "??" not in text, case_id

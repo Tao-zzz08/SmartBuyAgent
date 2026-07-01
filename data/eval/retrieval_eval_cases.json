@@ -112,7 +112,7 @@
       "price_lte": 5000,
       "exclude_brands": [
         "Apple",
-        "??"
+        "苹果"
       ]
     }
   },
@@ -188,7 +188,7 @@
     "hard_filters": {
       "category": "shoes",
       "forbidden_terms": [
-        "??",
+        "高跟",
         "high heel"
       ]
     }
@@ -275,7 +275,7 @@
     "hard_filters": {
       "category": "skincare",
       "forbidden_terms": [
-        "??",
+        "美白",
         "whitening"
       ]
     }
