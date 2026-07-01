@@ -36,6 +36,7 @@ VALID_INTENTS = {
 }
 VALID_SOURCES = {"rule", "llm", "mixed"}
 VALID_CATEGORIES = {"phone", "shoes", "skincare"}
+VALID_SECONDARY_INTENTS = {"product_knowledge"}
 LLM_UNDERSTANDING_MARKER = "SMARTBUY_QUERY_UNDERSTANDING_JSON"
 SKINCARE_MEDICAL_TERMS = [
     "治疗",
@@ -113,6 +114,10 @@ class QueryUnderstandingResult(BaseModel):
     dialog_state: str | None = None
     next_dialog_state: str | None = None
     dialog_state_reason: str = ""
+    secondary_intents: list[str] = Field(default_factory=list)
+    knowledge_questions: list[str] = Field(default_factory=list)
+    multi_intent_detected: bool = False
+    multi_intent_reason: str = ""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -167,6 +172,15 @@ class QueryUnderstandingResult(BaseModel):
         data["dialog_state"] = normalize_dialog_state(data.get("dialog_state"))
         data["next_dialog_state"] = normalize_dialog_state(data.get("next_dialog_state"))
         data["dialog_state_reason"] = str(data.get("dialog_state_reason") or "")
+        data["secondary_intents"] = _sanitize_secondary_intents(
+            data.get("secondary_intents"),
+            primary_intent=data["intent"],
+        )
+        data["knowledge_questions"] = _sanitize_knowledge_questions(
+            data.get("knowledge_questions")
+        )
+        data["multi_intent_detected"] = bool(data.get("multi_intent_detected"))
+        data["multi_intent_reason"] = str(data.get("multi_intent_reason") or "")
         if "need_clarification" not in data:
             data["need_clarification"] = data["intent"] == "clarification"
         return data
@@ -188,6 +202,20 @@ class QueryUnderstandingResult(BaseModel):
         ]
         self.dialog_state = normalize_dialog_state(self.dialog_state)
         self.next_dialog_state = normalize_dialog_state(self.next_dialog_state)
+        self.knowledge_questions = _sanitize_knowledge_questions(self.knowledge_questions)
+        self.secondary_intents = _sanitize_secondary_intents(
+            self.secondary_intents,
+            primary_intent=self.intent,
+        )
+        if not self.knowledge_questions:
+            self.secondary_intents = []
+        self.multi_intent_detected = bool(
+            self.secondary_intents and self.knowledge_questions
+        )
+        if not self.multi_intent_detected:
+            self.multi_intent_reason = ""
+        else:
+            self.multi_intent_reason = _safe_reason(self.multi_intent_reason or "rule_multi_intent")
 
         if self.shopping_memory is None:
             self.shopping_memory = self.to_shopping_memory().to_dict()
@@ -257,6 +285,10 @@ class QueryUnderstandingResult(BaseModel):
             "dialog_state": self.dialog_state,
             "next_dialog_state": self.next_dialog_state,
             "dialog_state_reason": self.dialog_state_reason,
+            "secondary_intents": list(self.secondary_intents),
+            "knowledge_questions": list(self.knowledge_questions),
+            "multi_intent_detected": self.multi_intent_detected,
+            "multi_intent_reason": self.multi_intent_reason,
         }
 
 
@@ -275,6 +307,8 @@ class LLMQueryUnderstandingOutput(BaseModel):
     negative_preferences: list[str] = Field(default_factory=list)
     compare_product_ids: list[str] = Field(default_factory=list)
     referenced_product_indices: list[int] = Field(default_factory=list)
+    secondary_intents: list[str] = Field(default_factory=list)
+    knowledge_questions: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     reason: str = "unknown"
 
@@ -312,6 +346,13 @@ class LLMQueryUnderstandingOutput(BaseModel):
         data["referenced_product_indices"] = _list_of_int(
             data.get("referenced_product_indices")
         )
+        data["secondary_intents"] = _sanitize_secondary_intents(
+            data.get("secondary_intents"),
+            primary_intent=data["intent"],
+        )
+        data["knowledge_questions"] = _sanitize_knowledge_questions(
+            data.get("knowledge_questions")
+        )
         data["reason"] = _safe_reason(data.get("reason"))
         return data
 
@@ -323,6 +364,13 @@ class LLMQueryUnderstandingOutput(BaseModel):
         self.preferences = [
             item for item in self.preferences if item not in self.negative_preferences
         ]
+        self.knowledge_questions = _sanitize_knowledge_questions(self.knowledge_questions)
+        self.secondary_intents = _sanitize_secondary_intents(
+            self.secondary_intents,
+            primary_intent=self.intent,
+        )
+        if not self.knowledge_questions:
+            self.secondary_intents = []
         return self
 
 
@@ -350,6 +398,14 @@ class DialogStateAdjustment:
     next_dialog_state: str | None = None
     reason: str = ""
     clarification_question: str | None = None
+
+
+@dataclass(frozen=True)
+class MultiIntentAnalysis:
+    secondary_intents: list[str] = dataclass_field(default_factory=list)
+    knowledge_questions: list[str] = dataclass_field(default_factory=list)
+    detected: bool = False
+    reason: str = ""
 
 
 class QueryUnderstandingService:
@@ -639,6 +695,7 @@ class QueryUnderstandingService:
             dialog_state=next_dialog_state,
             last_intent=intent,
         )
+        multi_intent = analyze_secondary_intents(normalized_query, intent)
 
         confidence = _confidence_for_result(
             intent=intent,
@@ -679,6 +736,10 @@ class QueryUnderstandingService:
             dialog_state=inferred_dialog_state,
             next_dialog_state=next_dialog_state,
             dialog_state_reason=dialog_state_reason,
+            secondary_intents=multi_intent.secondary_intents,
+            knowledge_questions=multi_intent.knowledge_questions,
+            multi_intent_detected=multi_intent.detected,
+            multi_intent_reason=multi_intent.reason,
         )
         return self._apply_llm_fallback_if_needed(
             rule_result=rule_result,
@@ -807,10 +868,11 @@ class QueryUnderstandingService:
         ):
             return "compare"
 
-        if self._contains_any(lower_query, self.KNOWLEDGE_KEYWORDS):
+        has_shopping_cue = self._contains_any(lower_query, self.SHOPPING_KEYWORDS)
+        if self._contains_any(lower_query, self.KNOWLEDGE_KEYWORDS) and not has_shopping_cue:
             return "product_knowledge"
 
-        if has_category or self._contains_any(lower_query, self.SHOPPING_KEYWORDS):
+        if has_category or has_shopping_cue:
             if not has_category and self._looks_like_clarification(lower_query):
                 return "clarification"
             return "shopping_guide"
@@ -976,6 +1038,58 @@ def decide_llm_fallback(
         return LLMFallbackDecision(False, ["strong_rule"])
 
     return LLMFallbackDecision(False, ["no_trigger"])
+
+
+def analyze_secondary_intents(query: str, primary_intent: str) -> MultiIntentAnalysis:
+    if primary_intent not in {"shopping_guide", "compare"}:
+        return MultiIntentAnalysis()
+    if _looks_like_safety_boundary_query(query) or _looks_like_chitchat_query(query):
+        return MultiIntentAnalysis()
+
+    knowledge_questions = extract_knowledge_questions(query)
+    if not knowledge_questions:
+        return MultiIntentAnalysis()
+
+    if primary_intent == "shopping_guide":
+        reason = "shopping_with_knowledge_question"
+    else:
+        reason = "compare_with_knowledge_question"
+    return MultiIntentAnalysis(
+        secondary_intents=["product_knowledge"],
+        knowledge_questions=knowledge_questions,
+        detected=True,
+        reason=reason,
+    )
+
+
+def extract_knowledge_questions(query: str) -> list[str]:
+    if not query.strip() or _looks_like_safety_boundary_query(query):
+        return []
+
+    questions: list[str] = []
+    patterns = [
+        r"(?:顺便|同时|另外|并且|也|再)?\s*(?:告诉我|说说|解释一下|解释|讲讲|帮我解释|讲一讲|说一下)\s*(?P<question>[^，。！？?]+)",
+        r"(?:顺便|同时|另外|并且|也|再)\s*(?P<question>[^，。！？?]*(?:为什么|怎么选|原理|主要看|哪些参数|有什么区别|注意什么)[^，。！？?]*)",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, query, flags=re.IGNORECASE):
+            question = _clean_knowledge_question(match.group("question"))
+            if question:
+                questions.append(question)
+
+    return _sanitize_knowledge_questions(questions)
+
+
+def _clean_knowledge_question(value: str) -> str:
+    cleaned = str(value or "").strip(" ，。！？?；;、")
+    cleaned = re.sub(
+        r"^(?:顺便|同时|另外|并且|也|再)?\s*(?:告诉我|说说|解释一下|解释|讲讲|帮我解释|讲一讲|说一下)\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = cleaned.strip(" ，。！？?；;、")
+    return cleaned[:120]
 
 
 def infer_dialog_state(previous_memory: ShoppingMemory | None) -> str:
@@ -1503,6 +1617,8 @@ def build_llm_understanding_prompt(
             "negative_preferences": ["short negative preference words"],
             "compare_product_ids": ["only ids from last_recommended_products"],
             "referenced_product_indices": ["positive integers within products"],
+            "secondary_intents": ["only product_knowledge when the user also asks an explanation"],
+            "knowledge_questions": ["knowledge explanation sub-questions, do not answer them"],
             "confidence": "0..1",
             "reason": "short debug reason",
         },
@@ -1519,7 +1635,11 @@ def build_llm_understanding_prompt(
         "second product, use referenced_product_indices. compare_product_ids "
         "may only use ids provided in last_recommended_products. For skincare, "
         "do not extract medical claims such as treatment, cure, drug effect, "
-        "prescription, or medical repair as preferences. If uncertain, use "
+        "prescription, or medical repair as preferences. If the user asks for "
+        "recommendation or comparison and also asks an explanation, keep the "
+        "primary intent as the routing intent and put product_knowledge in "
+        "secondary_intents with the explanation text in knowledge_questions. "
+        "Do not answer knowledge_questions. If uncertain, use "
         "intent=clarification and low confidence."
     )
     return [
@@ -1572,6 +1692,15 @@ def sanitize_llm_understanding(
             for index in output.referenced_product_indices
             if 1 <= index <= max_reference_index
         ]
+    knowledge_questions = _sanitize_knowledge_questions(output.knowledge_questions)
+    secondary_intents = (
+        _sanitize_secondary_intents(
+            output.secondary_intents,
+            primary_intent=output.intent,
+        )
+        if knowledge_questions
+        else []
+    )
     return output.model_copy(
         update={
             "category": category,
@@ -1584,6 +1713,8 @@ def sanitize_llm_understanding(
             "negative_preferences": negative_preferences,
             "compare_product_ids": compare_product_ids,
             "referenced_product_indices": referenced_indices,
+            "secondary_intents": secondary_intents,
+            "knowledge_questions": knowledge_questions,
             "confidence": max(0.0, min(1.0, output.confidence)),
             "reason": _safe_reason(output.reason),
         }
@@ -1673,6 +1804,25 @@ def merge_rule_and_llm_understanding(
         intent == "shopping_guide" and not resolved_memory.category
     )
     reason = _combine_reasons(rule_result.reason, llm_output.reason)
+    knowledge_questions = _sanitize_knowledge_questions(
+        [*rule_result.knowledge_questions, *llm_output.knowledge_questions]
+    )
+    secondary_intents = (
+        _sanitize_secondary_intents(
+            [*rule_result.secondary_intents, *llm_output.secondary_intents],
+            primary_intent=intent,
+        )
+        if knowledge_questions
+        else []
+    )
+    multi_intent_detected = bool(secondary_intents and knowledge_questions)
+    multi_intent_reason = ""
+    if multi_intent_detected:
+        multi_intent_reason = (
+            rule_result.multi_intent_reason
+            or ("llm_multi_intent" if llm_output.secondary_intents else "")
+            or "mixed_multi_intent"
+        )
     return QueryUnderstandingResult(
         original_query=rule_result.original_query,
         effective_query=effective_query,
@@ -1702,6 +1852,10 @@ def merge_rule_and_llm_understanding(
         dialog_state=rule_result.dialog_state,
         next_dialog_state=next_dialog_state,
         dialog_state_reason=rule_result.dialog_state_reason,
+        secondary_intents=secondary_intents,
+        knowledge_questions=knowledge_questions,
+        multi_intent_detected=multi_intent_detected,
+        multi_intent_reason=multi_intent_reason,
     )
 
 
@@ -1874,6 +2028,43 @@ def _safe_reason(value: Any) -> str:
     if _contains_boundary_term(reason) or _contains_medical_term(reason):
         return "unsafe_llm_reason"
     return re.sub(r"[^A-Za-z0-9_\-+]", "_", reason) or "unknown"
+
+
+def _sanitize_secondary_intents(
+    value: Any,
+    *,
+    primary_intent: str | None,
+) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in _list_of_str(value):
+        intent = item.strip()
+        if intent not in VALID_SECONDARY_INTENTS:
+            continue
+        if intent == primary_intent:
+            continue
+        if intent in seen:
+            continue
+        output.append(intent)
+        seen.add(intent)
+    return output
+
+
+def _sanitize_knowledge_questions(value: Any) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in _list_of_str(value):
+        question = _clean_knowledge_question(item)
+        if not question:
+            continue
+        key = question.lower()
+        if key in seen:
+            continue
+        output.append(question[:120])
+        seen.add(key)
+        if len(output) >= 3:
+            break
+    return output
 
 
 def _combine_reasons(rule_reason: str, llm_reason: str) -> str:

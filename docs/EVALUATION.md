@@ -152,6 +152,24 @@ on the previous conversation stage.
 Dialog state is not a purchase workflow. The project still does not support
 cart, order, payment, or checkout actions.
 
+P0-4 adds secondary-intent diagnostics. The primary `intent` remains the
+routing intent, while `secondary_intents` records auxiliary needs such as
+`product_knowledge` when a user asks for a recommendation or comparison and
+also requests an explanation.
+
+Examples:
+
+- "我想买一部拍照好的手机，顺便告诉我为什么像素高不一定拍照好"
+- "推荐一双通勤鞋，也解释一下为什么鞋底纹路影响防滑"
+- "第一个和第二个比一下，顺便说说哪个拍照更好"
+
+The eval suite tracks whether expected secondary intents and knowledge
+questions are captured. These diagnostics do not affect the main route and do
+not call real LLM services by default.
+
+P0-4 does not change LangGraph routing. It only enriches QueryUnderstanding
+trace fields for downstream answer composition and future improvements.
+
 Run:
 
 ```bash

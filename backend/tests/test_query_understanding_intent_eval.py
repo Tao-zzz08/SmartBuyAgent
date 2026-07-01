@@ -49,6 +49,8 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
                     "is_follow_up": False,
                     "need_clarification": False,
                     "llm_fallback_attempted": False,
+                    "secondary_intents": ["product_knowledge"],
+                    "knowledge_questions": ["为什么像素高不一定拍照好"],
                 }
             )
 
@@ -73,6 +75,10 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
                 "budget_max": 4000,
                 "preferences_contains": ["拍照"],
                 "negative_preferences_contains": ["苹果"],
+            },
+            "diagnostic": {
+                "expected_secondary_intents": ["product_knowledge"],
+                "knowledge_questions_contains": ["为什么像素高不一定拍照好"],
             },
         },
         {
@@ -117,7 +123,11 @@ def test_runner_loads_cases_and_runs_with_previous_memory(monkeypatch, tmp_path:
     assert output["results"][1]["actual"]["next_dialog_state"] == "showing_products"
     assert output["results"][1]["actual"]["llm_fallback_should_call"] is True
     assert output["results"][1]["actual"]["llm_fallback_trigger_reasons"] == ["ambiguous_follow_up"]
-    assert output["summary"]["diagnostic_metrics"]["multi_intent_case_count"] == 0
+    assert output["results"][0]["actual"]["secondary_intents"] == ["product_knowledge"]
+    assert output["results"][0]["actual"]["knowledge_questions"] == ["为什么像素高不一定拍照好"]
+    assert output["summary"]["diagnostic_metrics"]["multi_intent_case_count"] == 1
+    assert output["summary"]["diagnostic_metrics"]["secondary_intent_supported_cases"] == 1
+    assert output["summary"]["diagnostic_metrics"]["knowledge_question_supported_cases"] == 1
     json.dumps(output, ensure_ascii=False)
 
 

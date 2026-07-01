@@ -212,6 +212,58 @@ def test_diagnostic_prefers_theoretical_fallback_should_call() -> None:
     assert result["diagnostic_checks"]["should_call_llm_fallback"]["passed"] is True
 
 
+def test_diagnostic_secondary_intents_and_questions_can_pass() -> None:
+    result = evaluate_intent_case(
+        case={
+            "id": "multi_supported",
+            "expected": {"intent": "shopping_guide"},
+            "diagnostic": {
+                "expected_secondary_intents": ["product_knowledge"],
+                "knowledge_questions_contains": ["为什么像素高不一定拍照好"],
+            },
+        },
+        actual={
+            "intent": "shopping_guide",
+            "secondary_intents": ["product_knowledge"],
+            "knowledge_questions": ["为什么像素高不一定拍照好"],
+        },
+    )
+    metrics = aggregate_diagnostic_metrics([result])
+
+    assert result["passed"] is True
+    assert result["diagnostic_checks"]["secondary_intents"]["passed"] is True
+    assert result["diagnostic_checks"]["knowledge_questions"]["passed"] is True
+    assert metrics["secondary_intent_supported_cases"] == 1
+    assert metrics["secondary_intent_capability_gap"] == 0
+    assert metrics["knowledge_question_supported_cases"] == 1
+    assert metrics["knowledge_question_capability_gap"] == 0
+    assert metrics["secondary_intent_observed_cases"] == 1
+    assert metrics["knowledge_question_observed_cases"] == 1
+
+
+def test_empty_expected_secondary_diagnostic_does_not_create_gap() -> None:
+    result = evaluate_intent_case(
+        case={
+            "id": "single_intent_negative",
+            "diagnostic": {
+                "expected_secondary_intents": [],
+                "knowledge_questions_contains": [],
+            },
+        },
+        actual={
+            "secondary_intents": [],
+            "knowledge_questions": [],
+        },
+    )
+    metrics = aggregate_diagnostic_metrics([result])
+
+    assert result["diagnostic_checks"]["secondary_intents"]["passed"] is True
+    assert result["diagnostic_checks"]["knowledge_questions"]["passed"] is True
+    assert metrics["multi_intent_case_count"] == 0
+    assert metrics["secondary_intent_capability_gap"] == 0
+    assert metrics["knowledge_question_capability_gap"] == 0
+
+
 def test_aggregate_metrics_compute_field_accuracy_and_preference_f1() -> None:
     results = [
         evaluate_intent_case(
@@ -339,4 +391,6 @@ def test_aggregate_diagnostic_metrics_count_capability_gaps() -> None:
     assert metrics["multi_intent_case_count"] == 1
     assert metrics["secondary_intent_capability_gap"] == 1
     assert metrics["knowledge_question_capability_gap"] == 1
+    assert metrics["secondary_intent_observed_cases"] == 0
+    assert metrics["knowledge_question_observed_cases"] == 0
     assert metrics["long_tail_first_turn_cases"] == 1

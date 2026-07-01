@@ -372,6 +372,52 @@
     }
   },
   {
+    "id": "multi_intent_compare_with_camera_explanation",
+    "case_group": "multi_intent",
+    "description": "比较追问中夹带拍照解释需求。",
+    "query": "第一个和第二个比一下，顺便说说哪个拍照更好",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 4000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002", "phone_003"],
+      "last_intent": "shopping_guide",
+      "dialog_state": "showing_products"
+    },
+    "expected": {
+      "intent": "compare",
+      "category": "phone",
+      "referenced_product_indices": [1, 2],
+      "compare_product_ids": ["phone_001", "phone_002"],
+      "is_follow_up": true,
+      "dialog_state": "showing_products",
+      "next_dialog_state": "comparing_products"
+    },
+    "diagnostic": {
+      "expected_secondary_intents": ["product_knowledge"],
+      "knowledge_questions_contains": ["哪个拍照更好"],
+      "should_call_llm_fallback": true
+    }
+  },
+  {
+    "id": "single_intent_phone_camera_no_secondary",
+    "case_group": "multi_intent_negative",
+    "description": "纯导购不应产生辅助知识意图。",
+    "query": "预算4000以内，推荐拍照好的手机",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "budget_max": 4000,
+      "preferences_contains": ["拍照"]
+    },
+    "diagnostic": {
+      "expected_secondary_intents": [],
+      "knowledge_questions_contains": []
+    }
+  },
+  {
     "id": "dialog_state_awaiting_budget_amount",
     "case_group": "dialog_state_awaiting_budget",
     "description": "上一轮追问预算时，预算短句应继承品类和偏好。",

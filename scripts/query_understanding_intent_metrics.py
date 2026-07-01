@@ -205,20 +205,29 @@ def aggregate_diagnostic_metrics(results: list[dict[str, Any]]) -> dict[str, Any
     knowledge_supported = 0
     knowledge_gap = 0
     long_tail_cases = 0
+    secondary_observed = 0
+    knowledge_observed = 0
 
     for result in results:
         checks = result.get("diagnostic_checks") or {}
+        actual = result.get("actual") or {}
+        if _list_of_str(actual.get("secondary_intents")):
+            secondary_observed += 1
+        if _list_of_str(actual.get("knowledge_questions")):
+            knowledge_observed += 1
         if "secondary_intents" in checks:
-            multi_intent_cases += 1
-            if checks["secondary_intents"].get("passed"):
-                secondary_supported += 1
-            else:
-                secondary_gap += 1
+            if _list_of_str(checks["secondary_intents"].get("expected")):
+                multi_intent_cases += 1
+                if checks["secondary_intents"].get("passed"):
+                    secondary_supported += 1
+                else:
+                    secondary_gap += 1
         if "knowledge_questions" in checks:
-            if checks["knowledge_questions"].get("passed"):
-                knowledge_supported += 1
-            else:
-                knowledge_gap += 1
+            if _list_of_str(checks["knowledge_questions"].get("expected")):
+                if checks["knowledge_questions"].get("passed"):
+                    knowledge_supported += 1
+                else:
+                    knowledge_gap += 1
         if checks.get("long_tail_first_turn", {}).get("actual"):
             long_tail_cases += 1
 
@@ -229,6 +238,8 @@ def aggregate_diagnostic_metrics(results: list[dict[str, Any]]) -> dict[str, Any
         "secondary_intent_capability_gap": secondary_gap,
         "knowledge_question_supported_cases": knowledge_supported,
         "knowledge_question_capability_gap": knowledge_gap,
+        "secondary_intent_observed_cases": secondary_observed,
+        "knowledge_question_observed_cases": knowledge_observed,
         "long_tail_first_turn_cases": long_tail_cases,
     }
 
