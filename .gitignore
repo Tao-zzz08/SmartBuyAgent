@@ -17,3 +17,5 @@ results/eval-*-report.md
 results/eval-*-details.json
 results/eval-candidates*.json
 results/eval-candidates*.md
+results/query-understanding-intent-*.md
+results/query-understanding-intent-*.json

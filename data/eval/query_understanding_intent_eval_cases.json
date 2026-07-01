@@ -1,0 +1,374 @@
+[
+  {
+    "id": "explicit_phone_camera_budget",
+    "case_group": "explicit_shopping",
+    "description": "明确手机导购，包含预算和拍照偏好。",
+    "query": "预算4000以内，推荐拍照好的手机",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "budget_max": 4000,
+      "preferences_contains": ["拍照"],
+      "is_follow_up": false,
+      "need_clarification": false
+    },
+    "diagnostic": {
+      "should_call_llm_fallback": false
+    }
+  },
+  {
+    "id": "explicit_shoes_commute_anti_slip",
+    "case_group": "explicit_shopping",
+    "description": "明确鞋靴导购，包含通勤和防滑偏好。",
+    "query": "推荐一双通勤防滑的鞋",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "shoes",
+      "preferences_contains": ["通勤", "防滑"],
+      "is_follow_up": false
+    },
+    "diagnostic": {
+      "should_call_llm_fallback": false
+    }
+  },
+  {
+    "id": "vague_recommend_anything",
+    "case_group": "vague_shopping",
+    "description": "缺少品类和偏好的泛化推荐请求应澄清。",
+    "query": "推荐一下",
+    "previous_memory": null,
+    "expected": {
+      "intent": "clarification",
+      "category": null,
+      "need_clarification": true
+    },
+    "diagnostic": {
+      "should_call_llm_fallback": false
+    }
+  },
+  {
+    "id": "vague_vlog_travel_long_tail",
+    "case_group": "vague_shopping",
+    "description": "首轮长尾场景表达，当前作为诊断观察复杂 query 能力。",
+    "query": "我想买个适合毕业旅行 vlog 的东西，别太贵，最好晚上也能拍",
+    "previous_memory": null,
+    "expected": {
+      "intent_in": ["shopping_guide", "clarification"],
+      "need_clarification": false
+    },
+    "diagnostic": {
+      "should_call_llm_fallback": true,
+      "long_tail_first_turn": true
+    }
+  },
+  {
+    "id": "budget_phone_range_3000_5000",
+    "case_group": "budget_expression",
+    "description": "手机预算区间表达。",
+    "query": "3000到5000之间的手机",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "budget_min": 3000,
+      "budget_max": 5000
+    }
+  },
+  {
+    "id": "budget_skincare_under_300",
+    "case_group": "budget_expression",
+    "description": "护肤预算上限表达。",
+    "query": "300以下的保湿产品",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "skincare",
+      "budget_max": 300,
+      "preferences_contains": ["保湿"]
+    }
+  },
+  {
+    "id": "preference_phone_camera_battery",
+    "case_group": "preference_extraction",
+    "description": "手机拍照和续航偏好抽取。",
+    "query": "要拍照好、续航强的手机",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "preferences_contains": ["拍照", "续航"]
+    }
+  },
+  {
+    "id": "preference_skincare_sensitive_moisturizing",
+    "case_group": "preference_extraction",
+    "description": "敏感肌温和保湿偏好抽取。",
+    "query": "敏感肌，想要温和保湿的护肤品",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "skincare",
+      "preferences_contains": ["敏感肌", "温和", "保湿"]
+    }
+  },
+  {
+    "id": "negative_phone_no_apple",
+    "case_group": "negative_preference",
+    "description": "手机导购负向品牌偏好。",
+    "query": "不要苹果，推荐拍照好的手机",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "preferences_contains": ["拍照"],
+      "negative_preferences_contains": ["苹果"]
+    }
+  },
+  {
+    "id": "negative_shoes_no_high_heels",
+    "case_group": "negative_preference",
+    "description": "通勤鞋负向高跟偏好。",
+    "query": "不考虑高跟，推荐通勤鞋",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "shoes",
+      "preferences_contains": ["通勤"],
+      "negative_preferences_contains": ["高跟"]
+    }
+  },
+  {
+    "id": "followup_budget_to_5000",
+    "case_group": "followup_budget_preference",
+    "description": "预算追问应继承手机品类和拍照偏好并更新预算。",
+    "query": "那增加到5000呢",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 3000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "budget_max": 5000,
+      "preferences_contains": ["拍照"],
+      "is_follow_up": true
+    }
+  },
+  {
+    "id": "followup_preference_cheaper",
+    "case_group": "followup_budget_preference",
+    "description": "便宜一点追问应保持品类和偏好上下文。",
+    "query": "便宜一点呢",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 5000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": ["苹果"],
+      "last_product_ids": ["phone_001", "phone_002"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "preferences_contains": ["拍照"],
+      "negative_preferences_contains": ["苹果"],
+      "is_follow_up": true
+    }
+  },
+  {
+    "id": "category_switch_to_shoes",
+    "case_group": "category_switch",
+    "description": "从手机切换到鞋子时应清理手机拍照偏好。",
+    "query": "那鞋子呢",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 5000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "shoes",
+      "preferences_not_contains": ["拍照", "影像"],
+      "is_follow_up": true
+    }
+  },
+  {
+    "id": "category_switch_to_skincare",
+    "case_group": "category_switch",
+    "description": "从手机切换到护肤时不应保留续航偏好。",
+    "query": "换成护肤品看看",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 4000, "currency": "CNY"},
+      "preferences": ["续航"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "skincare",
+      "preferences_not_contains": ["续航", "拍照"],
+      "is_follow_up": true
+    }
+  },
+  {
+    "id": "compare_first_second",
+    "case_group": "compare_reference",
+    "description": "第一和第二个比较应解析序号和商品 id。",
+    "query": "第一个和第二个哪个好",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 5000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002", "phone_003"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent": "compare",
+      "category": "phone",
+      "referenced_product_indices": [1, 2],
+      "compare_product_ids": ["phone_001", "phone_002"],
+      "is_follow_up": true
+    }
+  },
+  {
+    "id": "compare_second_camera",
+    "case_group": "compare_reference",
+    "description": "第二个是否适合拍照应解析单个序号引用。",
+    "query": "第二个更适合拍照吗",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 5000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002", "phone_003"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent": "compare",
+      "category": "phone",
+      "referenced_product_indices": [2],
+      "compare_product_ids": ["phone_002"],
+      "is_follow_up": true
+    }
+  },
+  {
+    "id": "knowledge_phone_camera_params",
+    "case_group": "product_knowledge",
+    "description": "手机拍照知识问答。",
+    "query": "手机拍照主要看哪些参数",
+    "previous_memory": null,
+    "expected": {
+      "intent": "product_knowledge",
+      "category": "phone"
+    }
+  },
+  {
+    "id": "knowledge_shoes_size",
+    "case_group": "product_knowledge",
+    "description": "鞋子尺码知识问答。",
+    "query": "鞋子尺码怎么选",
+    "previous_memory": null,
+    "expected": {
+      "intent": "product_knowledge",
+      "category": "shoes"
+    }
+  },
+  {
+    "id": "safety_purchase_link",
+    "case_group": "safety_boundary",
+    "description": "购买链接请求不能产生 purchase/payment intent。",
+    "query": "帮我下单第一款，给我购买链接",
+    "previous_memory": {
+      "category": "phone",
+      "budget": {"min": null, "max": 5000, "currency": "CNY"},
+      "preferences": ["拍照"],
+      "negative_preferences": [],
+      "last_product_ids": ["phone_001", "phone_002"],
+      "last_intent": "shopping_guide"
+    },
+    "expected": {
+      "intent_in": ["shopping_guide", "compare", "clarification"],
+      "category": "phone"
+    }
+  },
+  {
+    "id": "safety_skincare_medical_terms",
+    "case_group": "safety_boundary",
+    "description": "护肤医疗化表达不应进入正向偏好。",
+    "query": "推荐能治疗痘痘的护肤品",
+    "previous_memory": null,
+    "expected": {
+      "intent_in": ["shopping_guide", "product_knowledge", "clarification"],
+      "category": "skincare",
+      "preferences_not_contains": ["治疗", "治愈", "药效", "医学修复"]
+    }
+  },
+  {
+    "id": "chitchat_hello",
+    "case_group": "chitchat",
+    "description": "中文问候。",
+    "query": "你好",
+    "previous_memory": null,
+    "expected": {
+      "intent": "chitchat",
+      "category": null
+    }
+  },
+  {
+    "id": "chitchat_thanks",
+    "case_group": "chitchat",
+    "description": "感谢语作为闲聊 baseline。",
+    "query": "谢谢",
+    "previous_memory": null,
+    "expected": {
+      "intent": "chitchat",
+      "category": null
+    }
+  },
+  {
+    "id": "multi_intent_phone_camera_with_knowledge",
+    "case_group": "multi_intent",
+    "description": "导购请求中夹带知识问题，主意图仍以导购为 baseline。",
+    "query": "我想买一部拍照好的手机，顺便告诉我为什么像素高不一定拍照好",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "phone",
+      "preferences_contains": ["拍照"]
+    },
+    "diagnostic": {
+      "expected_secondary_intents": ["product_knowledge"],
+      "knowledge_questions_contains": ["为什么像素高不一定拍照好"],
+      "should_call_llm_fallback": true
+    }
+  },
+  {
+    "id": "multi_intent_shoes_with_explanation",
+    "case_group": "multi_intent",
+    "description": "鞋靴导购中夹带防滑解释问题。",
+    "query": "推荐一双通勤鞋，也解释一下为什么鞋底纹路影响防滑",
+    "previous_memory": null,
+    "expected": {
+      "intent": "shopping_guide",
+      "category": "shoes",
+      "preferences_contains": ["通勤", "防滑"]
+    },
+    "diagnostic": {
+      "expected_secondary_intents": ["product_knowledge"],
+      "knowledge_questions_contains": ["为什么鞋底纹路影响防滑"],
+      "should_call_llm_fallback": true
+    }
+  }
+]

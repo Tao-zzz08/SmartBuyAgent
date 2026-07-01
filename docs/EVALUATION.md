@@ -90,6 +90,41 @@ understanding and routing:
 - no previous products means ordinal comparison must clarify instead of
   fabricating product references
 
+### QueryUnderstanding Intent Eval
+
+`eval_query_understanding_intent.py` provides field-level metrics for the
+QueryUnderstanding layer.
+
+It evaluates:
+
+- intent accuracy
+- category accuracy
+- budget min/max extraction accuracy
+- preference precision / recall / F1
+- negative preference precision / recall / F1
+- follow-up accuracy
+- clarification accuracy
+- compare reference resolution accuracy
+- intent-in boundary checks
+- forbidden preference violation rate
+
+The suite also reports diagnostic-only metrics for LLM fallback trigger
+observation and multi-intent capability gaps. Diagnostic checks do not affect
+case pass/fail.
+
+This script is independent from `run_eval_all.py` and is intended for
+QueryUnderstanding baseline analysis before changing fallback logic, dialog
+state, or multi-intent support.
+
+Run:
+
+```bash
+python scripts/eval_query_understanding_intent.py \
+  --cases data/eval/query_understanding_intent_eval_cases.json \
+  --output results/query-understanding-intent-report.md \
+  --details results/query-understanding-intent-details.json
+```
+
 ### Retrieval Eval
 
 `retrieval_eval_cases.json` is retrieval-focused, not final answer-focused. It
