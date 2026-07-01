@@ -317,3 +317,45 @@ def test_suite_result_from_output_preserves_metrics() -> None:
         "ndcg_at_5": 0.76,
         "mrr_at_5": 0.91,
     }
+
+
+def test_eval_report_renders_multiturn_session_metrics() -> None:
+    output = {
+        "results": [],
+        "summary": {
+            "total_cases": 2,
+            "passed_cases": 2,
+            "failed_cases": 0,
+            "metrics": {
+                "session_success_rate": 1.0,
+                "context_carryover_accuracy": 1.0,
+                "category_switch_accuracy": 0.5,
+                "compare_resolution_accuracy": 1.0,
+                "clarification_accuracy": 1.0,
+                "route_stability_rate": 1.0,
+                "evaluated_sessions": 2,
+                "failed_sessions": 0,
+            },
+        },
+    }
+
+    suite = run_eval_all.suite_result_from_output("multiturn", output)
+    report = run_eval_all.EvalReport(
+        generated_at="2026-07-01T00:00:00+00:00",
+        total_suites=1,
+        completed_suites=1,
+        skipped_suites=0,
+        total_cases=2,
+        passed_cases=2,
+        failed_cases=0,
+        pass_rate=1.0,
+        suites=[suite],
+    )
+
+    markdown = run_eval_all.render_markdown(report)
+    details = run_eval_all.report_to_json(report)
+
+    assert suite.metrics["session_success_rate"] == 1.0
+    assert "### multiturn" in markdown
+    assert "session_success_rate" in markdown
+    assert details["suites"][0]["metrics"]["category_switch_accuracy"] == 0.5

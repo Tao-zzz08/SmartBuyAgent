@@ -10,8 +10,14 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 3000,
-          "preferences_contains": ["拍照"],
-          "required_trace_steps": ["query_understanding", "product_retrieval", "knowledge_retrieval"],
+          "preferences_contains": [
+            "拍照"
+          ],
+          "required_trace_steps": [
+            "query_understanding",
+            "product_retrieval",
+            "knowledge_retrieval"
+          ],
           "product_cards_category": "phone"
         }
       },
@@ -23,10 +29,24 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
-          "preferences_contains": ["拍照"],
-          "required_trace_steps": ["query_understanding", "product_retrieval"],
-          "forbidden_trace_steps": ["product_comparison"],
-          "product_cards_category": "phone"
+          "preferences_contains": [
+            "拍照"
+          ],
+          "required_trace_steps": [
+            "query_understanding",
+            "product_retrieval"
+          ],
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ],
+          "product_cards_category": "phone",
+          "context_carryover": {
+            "category": true,
+            "preferences": [
+              "拍照"
+            ],
+            "budget_updated": true
+          }
         }
       },
       {
@@ -37,13 +57,36 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
-          "preferences_contains": ["拍照"],
-          "required_trace_steps": ["query_understanding", "product_retrieval"],
-          "forbidden_trace_steps": ["product_comparison"],
-          "product_cards_category": "phone"
+          "preferences_contains": [
+            "拍照"
+          ],
+          "required_trace_steps": [
+            "query_understanding",
+            "product_retrieval"
+          ],
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ],
+          "product_cards_category": "phone",
+          "context_carryover": {
+            "category": true,
+            "preferences": [
+              "拍照"
+            ],
+            "budget_updated": true
+          }
         }
       }
-    ]
+    ],
+    "type": "multiturn",
+    "task_type": "budget_followup",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "context_carryover",
+        "route_stability"
+      ]
+    }
   },
   {
     "id": "phone_preference_refinement",
@@ -56,7 +99,9 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
-          "preferences_contains": ["拍照"],
+          "preferences_contains": [
+            "拍照"
+          ],
           "product_cards_category": "phone"
         }
       },
@@ -68,9 +113,21 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
-          "preferences_contains": ["拍照", "续航"],
-          "forbidden_trace_steps": ["product_comparison"],
-          "product_cards_category": "phone"
+          "preferences_contains": [
+            "拍照",
+            "续航"
+          ],
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ],
+          "product_cards_category": "phone",
+          "context_carryover": {
+            "category": true,
+            "preferences": [
+              "拍照",
+              "续航"
+            ]
+          }
         }
       },
       {
@@ -81,14 +138,44 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
-          "preferences_contains": ["拍照", "续航"],
-          "negative_preferences_contains": ["苹果"],
-          "product_cards_forbidden_terms": ["苹果", "Apple", "iPhone"],
-          "forbidden_trace_steps": ["product_comparison"],
-          "product_cards_category": "phone"
+          "preferences_contains": [
+            "拍照",
+            "续航"
+          ],
+          "negative_preferences_contains": [
+            "苹果"
+          ],
+          "product_cards_forbidden_terms": [
+            "苹果",
+            "Apple",
+            "iPhone"
+          ],
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ],
+          "product_cards_category": "phone",
+          "context_carryover": {
+            "category": true,
+            "preferences": [
+              "拍照",
+              "续航"
+            ],
+            "negative_preferences": [
+              "苹果"
+            ]
+          }
         }
       }
-    ]
+    ],
+    "type": "multiturn",
+    "task_type": "negative_preference_update",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "context_carryover",
+        "route_stability"
+      ]
+    }
   },
   {
     "id": "category_switch_chain",
@@ -101,7 +188,9 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
-          "preferences_contains": ["拍照"],
+          "preferences_contains": [
+            "拍照"
+          ],
           "product_cards_category": "phone"
         }
       },
@@ -112,8 +201,18 @@
           "route": "shopping_guide",
           "category": "shoes",
           "budget_max": 5000,
-          "preferences_not_contains": ["拍照", "续航"],
-          "product_cards_category": "shoes"
+          "preferences_not_contains": [
+            "拍照",
+            "续航"
+          ],
+          "product_cards_category": "shoes",
+          "forbidden_preferences": [
+            "拍照",
+            "续航"
+          ],
+          "forbidden_categories": [
+            "phone"
+          ]
         }
       },
       {
@@ -123,12 +222,41 @@
           "route": "shopping_guide",
           "category": "skincare",
           "budget_max": 5000,
-          "preferences_not_contains": ["拍照", "续航", "通勤"],
+          "preferences_not_contains": [
+            "拍照",
+            "续航",
+            "通勤"
+          ],
           "product_cards_category": "skincare",
-          "forbidden_answer_terms": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病"]
+          "forbidden_answer_terms": [
+            "治疗",
+            "治愈",
+            "药效",
+            "处方",
+            "医学修复",
+            "修复疾病"
+          ],
+          "forbidden_preferences": [
+            "拍照",
+            "续航",
+            "通勤"
+          ],
+          "forbidden_categories": [
+            "phone",
+            "shoes"
+          ]
         }
       }
-    ]
+    ],
+    "type": "multiturn",
+    "task_type": "category_switch",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "category_switch",
+        "route_stability"
+      ]
+    }
   },
   {
     "id": "recommendation_then_compare",
@@ -141,7 +269,9 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
-          "preferences_contains": ["拍照"],
+          "preferences_contains": [
+            "拍照"
+          ],
           "min_product_cards": 2,
           "product_cards_category": "phone"
         }
@@ -151,14 +281,34 @@
         "expect": {
           "intent": "compare",
           "route": "compare",
-          "referenced_product_indices": [1, 2],
+          "referenced_product_indices": [
+            1,
+            2
+          ],
           "compare_product_ids_count": 2,
           "compare_product_ids_from_previous_turn": true,
           "product_cards_subset_of_previous_turn": true,
-          "required_trace_steps": ["query_understanding", "product_comparison"]
+          "required_trace_steps": [
+            "query_understanding",
+            "product_comparison"
+          ],
+          "should_compare": true,
+          "compare_indices": [
+            1,
+            2
+          ]
         }
       }
-    ]
+    ],
+    "type": "multiturn",
+    "task_type": "compare_followup",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "compare_resolution",
+        "route_stability"
+      ]
+    }
   },
   {
     "id": "compare_then_return_to_guide",
@@ -171,7 +321,9 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
-          "preferences_contains": ["拍照"],
+          "preferences_contains": [
+            "拍照"
+          ],
           "min_product_cards": 2,
           "product_cards_category": "phone"
         }
@@ -181,8 +333,16 @@
         "expect": {
           "intent": "compare",
           "route": "compare",
-          "referenced_product_indices": [1, 2],
-          "compare_product_ids_count": 2
+          "referenced_product_indices": [
+            1,
+            2
+          ],
+          "compare_product_ids_count": 2,
+          "should_compare": true,
+          "compare_indices": [
+            1,
+            2
+          ]
         }
       },
       {
@@ -193,14 +353,36 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 4000,
-          "preferences_contains": ["拍照"],
+          "preferences_contains": [
+            "拍照"
+          ],
           "compare_product_ids": [],
           "referenced_product_indices": [],
-          "forbidden_trace_steps": ["product_comparison"],
-          "product_cards_category": "phone"
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ],
+          "product_cards_category": "phone",
+          "should_compare": false,
+          "context_carryover": {
+            "category": true,
+            "preferences": [
+              "拍照"
+            ],
+            "budget_updated": true
+          }
         }
       }
-    ]
+    ],
+    "type": "multiturn",
+    "task_type": "mixed_multiturn",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "compare_resolution",
+        "context_carryover",
+        "route_stability"
+      ]
+    }
   },
   {
     "id": "stream_non_stream_consistency",
@@ -213,7 +395,9 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 3000,
-          "preferences_contains": ["拍照"],
+          "preferences_contains": [
+            "拍照"
+          ],
           "product_cards_category": "phone"
         }
       },
@@ -225,9 +409,59 @@
           "route": "shopping_guide",
           "category": "phone",
           "budget_max": 5000,
-          "preferences_contains": ["拍照"],
-          "forbidden_trace_steps": ["product_comparison"],
-          "product_cards_category": "phone"
+          "preferences_contains": [
+            "拍照"
+          ],
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ],
+          "product_cards_category": "phone",
+          "context_carryover": {
+            "category": true,
+            "preferences": [
+              "拍照"
+            ],
+            "budget_updated": true
+          }
+        }
+      }
+    ],
+    "type": "multiturn",
+    "task_type": "budget_followup",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "context_carryover",
+        "route_stability"
+      ]
+    }
+  },
+  {
+    "id": "compare_without_context_clarifies",
+    "description": "A compare request without previous product cards should clarify instead of comparing phantom products.",
+    "type": "multiturn",
+    "task_type": "clarification_without_context",
+    "session_expect": {
+      "success": true,
+      "checks": [
+        "clarification",
+        "compare_resolution"
+      ]
+    },
+    "turns": [
+      {
+        "user": "第一个和第二个哪个好",
+        "expect": {
+          "intent": "compare",
+          "route": "clarification",
+          "need_clarification": true,
+          "compare_product_ids": [],
+          "product_cards_count": 0,
+          "should_clarify": true,
+          "should_compare": false,
+          "forbidden_trace_steps": [
+            "product_comparison"
+          ]
         }
       }
     ]

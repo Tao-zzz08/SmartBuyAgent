@@ -26,10 +26,19 @@ def test_all_eval_case_files_have_valid_schema() -> None:
             assert case.get("id"), filename
             _assert_no_placeholder_tokens(case, case["id"])
             assert case.get("description") or case.get("query"), case.get("id")
+            if "task_type" in case:
+                assert isinstance(case["task_type"], str), case["id"]
+            if "session_expect" in case:
+                assert isinstance(case["session_expect"], dict), case["id"]
+                checks = case["session_expect"].get("checks")
+                if checks is not None:
+                    assert isinstance(checks, list), case["id"]
+                    assert all(isinstance(check, str) for check in checks), case["id"]
             if case.get("turns"):
                 for turn in case["turns"]:
                     assert turn.get("user"), case["id"]
                     assert isinstance(turn.get("expect", {}), dict), case["id"]
+                    _assert_valid_turn_expect(turn.get("expect", {}), case["id"])
             else:
                 assert case.get("query") or case.get("answer") or case.get("context"), case["id"]
                 assert isinstance(case.get("expect", {}), dict), case["id"]
@@ -92,3 +101,28 @@ def _real_product_ids_from_processed_data() -> set[str]:
 def _assert_no_placeholder_tokens(value: object, case_id: str) -> None:
     text = json.dumps(value, ensure_ascii=False)
     assert "??" not in text, case_id
+
+
+def _assert_valid_turn_expect(expect: dict, case_id: str) -> None:
+    if "context_carryover" in expect:
+        assert isinstance(expect["context_carryover"], dict), case_id
+
+    for field in ["should_clarify", "should_compare"]:
+        if field in expect:
+            assert isinstance(expect[field], bool), case_id
+
+    if "compare_indices" in expect:
+        assert isinstance(expect["compare_indices"], list), case_id
+        assert all(isinstance(index, int) for index in expect["compare_indices"]), case_id
+
+    list_fields = [
+        "forbidden_categories",
+        "forbidden_preferences",
+        "negative_preferences_include",
+        "preferences_include",
+        "negative_preferences_contains",
+        "preferences_contains",
+    ]
+    for field in list_fields:
+        if field in expect:
+            assert isinstance(expect[field], list), case_id

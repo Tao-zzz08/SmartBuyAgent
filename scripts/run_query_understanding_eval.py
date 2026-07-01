@@ -6,6 +6,8 @@ from typing import Any, Dict
 import json
 import sys
 
+from multiturn_metrics import aggregate_multiturn_metrics, evaluate_multiturn_session
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = PROJECT_ROOT / "backend"
@@ -173,7 +175,30 @@ def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
         if turn_result["failure_reasons"]
     ]
 
-    return {
+    session_metrics: dict[str, Any] | None = None
+    if _should_evaluate_session(case):
+        session_metrics = evaluate_multiturn_session(case, turn_results)
+        if not session_metrics.get("session_success"):
+            failure_reasons.append(
+                {
+                    "turn_index": "session",
+                    "user": "__session__",
+                    "reasons": session_metrics.get("failure_reasons") or [
+                        "session task failed"
+                    ],
+                    "expected": case.get("session_expect", {}),
+                    "actual_query_understanding": (
+                        turn_results[-1]["query_understanding"] if turn_results else {}
+                    ),
+                    "actual_product_cards": product_cards_summary(
+                        turn_results[-1]["response"].get("product_cards", [])
+                        if turn_results
+                        else []
+                    ),
+                }
+            )
+
+    result = {
         "id": case["id"],
         "description": case.get("description", ""),
         "passed": not failure_reasons,
@@ -181,6 +206,9 @@ def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
         "turns": turn_results,
         "failure_reasons": failure_reasons,
     }
+    if session_metrics is not None:
+        result["session_metrics"] = session_metrics
+    return result
 
 
 def _case_turns(case: EvalCase) -> list[dict[str, Any]]:
@@ -248,8 +276,13 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
     total_cases = len(results)
     failed_results = [result for result in results if not result["passed"]]
     total_turns = sum(result["turn_count"] for result in results)
-    failed_turns = sum(len(result["failure_reasons"]) for result in results)
-    return {
+    failed_turns = sum(
+        1
+        for result in results
+        for failure in result.get("failure_reasons", [])
+        if isinstance(failure.get("turn_index"), int)
+    )
+    summary = {
         "total_cases": total_cases,
         "passed_cases": total_cases - len(failed_results),
         "failed_cases": len(failed_results),
@@ -259,6 +292,22 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
         "failed_turns": failed_turns,
         "failure_reason_counts": _failure_reason_counts(results),
     }
+    session_results = [
+        result["session_metrics"]
+        for result in results
+        if isinstance(result.get("session_metrics"), dict)
+    ]
+    if session_results:
+        summary["metrics"] = aggregate_multiturn_metrics(session_results)
+    return summary
+
+
+def _should_evaluate_session(case: EvalCase) -> bool:
+    return (
+        case.get("type") == "multiturn"
+        or bool(case.get("task_type"))
+        or bool(case.get("session_expect"))
+    )
 
 
 def _run_retrieval_suite(case_id: str | None = None) -> dict[str, Any]:
@@ -501,17 +550,26 @@ def _check_query_understanding(
 
     _expect_list_contains(
         actual.get("preferences") or [],
-        expected.get("preferences_contains") or [],
+        [
+            *(expected.get("preferences_contains") or []),
+            *(expected.get("preferences_include") or []),
+        ],
         "preferences",
         failure_reasons,
     )
     _expect_list_contains(
         actual.get("negative_preferences") or [],
-        expected.get("negative_preferences_contains") or [],
+        [
+            *(expected.get("negative_preferences_contains") or []),
+            *(expected.get("negative_preferences_include") or []),
+        ],
         "negative_preferences",
         failure_reasons,
     )
-    for value in expected.get("preferences_not_contains") or []:
+    for value in [
+        *(expected.get("preferences_not_contains") or []),
+        *(expected.get("forbidden_preferences") or []),
+    ]:
         if value in (actual.get("preferences") or []):
             failure_reasons.append(f"preferences unexpectedly contains {value!r}")
 

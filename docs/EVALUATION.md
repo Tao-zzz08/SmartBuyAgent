@@ -143,6 +143,20 @@ still run the rule-based assertions, but they are skipped for ranking averages.
 - comparison followed by a return to shopping-guide retrieval
 - stream and non-stream consistency for structured query understanding
 
+Multiturn Eval also reports session-level task success metrics in addition to
+turn-level pass/fail:
+
+- Session Success Rate
+- Context Carryover Accuracy
+- Category Switch Accuracy
+- Compare Resolution Accuracy
+- Clarification Accuracy
+- Route Stability Rate
+
+These metrics evaluate whether a complete shopping conversation remains stable
+across budget follow-ups, category switches, negative preference updates, and
+compare follow-ups.
+
 ### GroundingGuard Eval
 
 `grounding_guard_eval_cases.json` validates the final-answer guard layer:
@@ -188,7 +202,7 @@ python ../scripts/run_eval_all.py \
 The unified report aggregates QueryUnderstanding, Retrieval, RAG, Multiturn,
 and GroundingGuard suites. It includes suite summaries, pass rates, failure
 reason counts, failed case details, suite metrics such as retrieval ranking
-metrics, and stable machine-readable JSON. The
+metrics and multiturn session success metrics, and stable machine-readable JSON. The
 report layer is deterministic and does not require external LLM APIs or
 external network access.
 
