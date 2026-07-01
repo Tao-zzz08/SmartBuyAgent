@@ -15,3 +15,5 @@ results/eval-report*.md
 results/eval-details*.json
 results/eval-*-report.md
 results/eval-*-details.json
+results/eval-candidates*.json
+results/eval-candidates*.md

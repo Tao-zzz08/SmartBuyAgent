@@ -146,6 +146,39 @@ python scripts/retrieval_ab_benchmark.py \
   --top-k 5
 ```
 
+### Feedback-to-Eval Pipeline
+
+`feedback_to_eval.py` converts structured user feedback and trace snapshots into
+reviewable eval candidates.
+
+It supports deterministic classification for:
+
+- negative preference violations
+- budget violations
+- category mismatches
+- missing or unsupported citations
+- purchase boundary violations
+- skincare medical claims
+- prompt injection failures
+- compare resolution failures
+- missing clarification
+
+The pipeline does not automatically modify formal eval files. It writes
+reviewable candidates with `needs_review: true` and `review_status: pending`,
+so humans can decide which cases should be promoted into `data/eval/*.json`.
+
+Run:
+
+```bash
+python scripts/feedback_to_eval.py \
+  --input data/feedback/sample_feedback.jsonl \
+  --output results/eval-candidates.json \
+  --markdown results/eval-candidates.md
+```
+
+`results/eval-candidates.json` and `results/eval-candidates.md` are generated
+review artifacts and should not be committed.
+
 ### RAG Eval
 
 `rag_eval_cases.json` validates grounded final answers:
