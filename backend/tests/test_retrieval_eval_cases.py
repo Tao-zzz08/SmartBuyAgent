@@ -77,16 +77,7 @@ class RoutingFakeKnowledgeService:
 
 def test_core_retrieval_eval_cases_pass_with_fake_services() -> None:
     catalog = load_fixture_catalog()
-    wanted = {
-        "phone_camera_under_5000",
-        "phone_without_apple",
-        "skincare_sensitive_moisturizing_under_300",
-    }
-    cases = [
-        case
-        for case in load_eval_cases(PROJECT_ROOT / "data" / "eval" / "retrieval_eval_cases.json")
-        if case["id"] in wanted
-    ]
+    cases = _fixture_ranking_cases()
 
     output = run_eval(
         cases,
@@ -107,6 +98,26 @@ def test_core_retrieval_eval_cases_pass_with_fake_services() -> None:
             assert "mrr_at_5" in result["metrics"]
             assert result["metrics"]["filter_compliance"] is True
             assert result["filter_violations"] == []
+
+
+def test_formal_retrieval_eval_cases_do_not_use_fixture_gold_ids() -> None:
+    cases = load_eval_cases(PROJECT_ROOT / "data" / "eval" / "retrieval_eval_cases.json")
+    product_cases_with_gold = [
+        case
+        for case in cases
+        if case.get("type") == "product_retrieval" and case.get("gold_relevance")
+    ]
+
+    assert len(product_cases_with_gold) >= 5
+    for case in product_cases_with_gold:
+        assert all(
+            not str(product_id).startswith("fixture_")
+            for product_id in case["gold_relevance"]
+        )
+        assert all(
+            not str(product_id).startswith("fixture_")
+            for product_id in (case.get("hard_filters") or {}).get("exclude_product_ids") or []
+        )
 
 
 def test_retrieval_eval_metrics_tolerate_cases_without_gold_relevance() -> None:
@@ -142,6 +153,92 @@ def test_retrieval_eval_metrics_tolerate_cases_without_gold_relevance() -> None:
     assert result["metrics"]["ndcg_at_5"] is None
     assert result["metrics"]["mrr_at_5"] is None
     assert output["summary"]["metrics"]["evaluated_ranking_cases"] == 0
+
+
+def _fixture_ranking_cases() -> list[dict]:
+    return [
+        {
+            "id": "fixture_phone_camera_under_5000",
+            "type": "product_retrieval",
+            "query": "预算5000，推荐拍照好的手机",
+            "structured_filters": {
+                "category": "phone",
+                "category_id": "cat_phone",
+                "budget_max": 5000,
+                "preferences": ["拍照"],
+                "negative_preferences": [],
+            },
+            "expect": {
+                "min_results": 1,
+                "all_category": "phone",
+                "max_price": 5000,
+                "must_match_any": ["拍照", "影像"],
+                "top_k": 5,
+            },
+            "gold_relevance": {
+                "fixture_phone_camera": 3,
+                "fixture_phone_apple": 1,
+            },
+            "hard_filters": {
+                "category": "phone",
+                "price_lte": 5000,
+            },
+        },
+        {
+            "id": "fixture_phone_camera_without_apple",
+            "type": "product_retrieval",
+            "query": "预算5000，推荐拍照好的手机，不考虑苹果",
+            "structured_filters": {
+                "category": "phone",
+                "category_id": "cat_phone",
+                "budget_max": 5000,
+                "preferences": ["拍照"],
+                "negative_preferences": ["Apple"],
+            },
+            "expect": {
+                "min_results": 1,
+                "all_category": "phone",
+                "max_price": 5000,
+                "must_match_any": ["拍照", "影像"],
+                "forbidden_terms": ["Apple"],
+                "top_k": 5,
+            },
+            "gold_relevance": {
+                "fixture_phone_camera": 3,
+            },
+            "hard_filters": {
+                "category": "phone",
+                "price_lte": 5000,
+                "exclude_brands": ["Apple"],
+            },
+        },
+        {
+            "id": "fixture_skincare_sensitive_under_300",
+            "type": "product_retrieval",
+            "query": "预算300，推荐敏感肌保湿护肤品",
+            "structured_filters": {
+                "category": "skincare",
+                "category_id": "cat_skincare",
+                "budget_max": 300,
+                "preferences": ["敏感肌", "保湿"],
+                "negative_preferences": [],
+            },
+            "expect": {
+                "min_results": 1,
+                "all_category": "skincare",
+                "max_price": 300,
+                "must_match_any": ["敏感肌", "保湿"],
+                "top_k": 5,
+            },
+            "gold_relevance": {
+                "fixture_skincare_sensitive": 3,
+            },
+            "hard_filters": {
+                "category": "skincare",
+                "price_lte": 300,
+            },
+        },
+    ]
 
 
 def load_fixture_catalog() -> dict:

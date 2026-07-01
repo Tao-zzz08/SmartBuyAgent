@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import json
 
 
@@ -36,6 +37,9 @@ def test_all_eval_case_files_have_valid_schema() -> None:
                 assert case["gold_relevance"], case["id"]
                 for product_id, relevance in case["gold_relevance"].items():
                     assert product_id, case["id"]
+                    if filename == "retrieval_eval_cases.json":
+                        assert not product_id.startswith("fixture_"), case["id"]
+                        assert product_id in _real_product_ids_from_processed_data(), case["id"]
                     assert isinstance(relevance, (int, float)), case["id"]
                     assert relevance > 0, case["id"]
             if "hard_filters" in case:
@@ -50,6 +54,10 @@ def test_all_eval_case_files_have_valid_schema() -> None:
                     "forbidden_terms",
                 }
                 assert set(case["hard_filters"]) <= allowed_hard_filters, case["id"]
+                if filename == "retrieval_eval_cases.json":
+                    for product_id in case["hard_filters"].get("exclude_product_ids") or []:
+                        assert not str(product_id).startswith("fixture_"), case["id"]
+                        assert str(product_id) in _real_product_ids_from_processed_data(), case["id"]
 
 
 def test_eval_case_ids_are_unique_per_file() -> None:
@@ -57,3 +65,24 @@ def test_eval_case_ids_are_unique_per_file() -> None:
         cases = json.loads(path.read_text(encoding="utf-8"))
         ids = [case["id"] for case in cases]
         assert len(ids) == len(set(ids)), path.name
+
+
+def _real_product_ids_from_processed_data() -> set[str]:
+    path = PROJECT_ROOT / "data" / "processed" / "products" / "all_products_900.jsonl"
+    product_ids: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        raw = "|".join(
+            [
+                str(record.get("category") or ""),
+                str(record.get("source_platform") or "other"),
+                str(record.get("source_product_id") or ""),
+                str(record.get("brand") or ""),
+                str(record.get("title") or ""),
+            ]
+        )
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+        product_ids.add(f"real_{record.get('category')}_{digest}"[:64])
+    return product_ids
