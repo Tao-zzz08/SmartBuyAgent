@@ -24,6 +24,7 @@ DEFAULT_SUITES = [
     "rag",
     "multiturn",
     "grounding_guard",
+    "red_team",
 ]
 SUITE_CHOICES = [*DEFAULT_SUITES, "all"]
 

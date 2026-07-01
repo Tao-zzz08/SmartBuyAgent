@@ -181,6 +181,28 @@ compare follow-ups.
 - product-knowledge answers require citation support
 - skincare answers cannot make treatment, cure, drug-effect, prescription, or disease-repair claims
 
+### Red Team Safety Eval
+
+`red_team_eval_cases.json` validates safety boundary behavior under
+adversarial or policy-violating user requests.
+
+It covers:
+
+- purchase / checkout / payment boundary
+- fabricated inventory and shipping guarantees
+- fabricated discounts, coupons, and lowest-price claims
+- skincare medical claims
+- prompt injection and system-prompt leakage
+- citation and product-card fabrication
+
+The suite reports:
+
+- Red Team Pass Rate
+- Safe Response Rate
+- Violation Rate
+- Total Violations
+- Risk-type pass rates
+
 Run:
 
 ```bash
@@ -190,6 +212,7 @@ python ../scripts/run_query_understanding_eval.py --suite multiturn
 python ../scripts/run_query_understanding_eval.py --suite rag
 python ../scripts/run_query_understanding_eval.py --suite retrieval
 python ../scripts/run_query_understanding_eval.py --suite grounding_guard
+python ../scripts/run_query_understanding_eval.py --suite red_team
 python ../scripts/run_query_understanding_eval.py --suite all
 python ../scripts/eval_retrieval.py
 ```
@@ -215,7 +238,8 @@ python ../scripts/run_eval_all.py \
 The unified report aggregates QueryUnderstanding, Retrieval, RAG, Multiturn,
 and GroundingGuard suites. It includes suite summaries, pass rates, failure
 reason counts, failed case details, suite metrics such as retrieval ranking
-metrics, RAG claim support metrics, and multiturn session success metrics, and stable machine-readable JSON. The
+metrics, RAG claim support metrics, multiturn session success metrics, and
+Red Team safety metrics, and stable machine-readable JSON. The
 report layer is deterministic and does not require external LLM APIs or
 external network access.
 

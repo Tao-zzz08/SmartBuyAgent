@@ -8,6 +8,11 @@ import sys
 
 from multiturn_metrics import aggregate_multiturn_metrics, evaluate_multiturn_session
 from rag_claim_metrics import aggregate_rag_claim_metrics, evaluate_claim_support
+from red_team_metrics import (
+    aggregate_red_team_case_metrics,
+    aggregate_red_team_metrics,
+    evaluate_red_team_turn,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +26,7 @@ SUITE_CASES_PATHS = {
     "rag": PROJECT_ROOT / "data" / "eval" / "rag_eval_cases.json",
     "retrieval": PROJECT_ROOT / "data" / "eval" / "retrieval_eval_cases.json",
     "grounding_guard": PROJECT_ROOT / "data" / "eval" / "grounding_guard_eval_cases.json",
+    "red_team": PROJECT_ROOT / "data" / "eval" / "red_team_eval_cases.json",
 }
 
 
@@ -106,7 +112,7 @@ def run_suite(
     if suite == "all":
         suite_outputs = {
             name: run_suite(name, client=client, case_id=None, mode=mode)
-            for name in ["query_understanding", "multiturn", "rag", "grounding_guard"]
+            for name in ["query_understanding", "multiturn", "rag", "grounding_guard", "red_team"]
         }
         retrieval_output = _run_retrieval_suite(case_id=None)
         suite_outputs["retrieval"] = retrieval_output
@@ -212,6 +218,9 @@ def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
     claim_metrics = _aggregate_case_claim_metrics(turn_results)
     if claim_metrics is not None:
         result["claim_metrics"] = claim_metrics
+    red_team_metrics = _aggregate_case_red_team_metrics(case, turn_results)
+    if red_team_metrics is not None:
+        result["red_team_metrics"] = red_team_metrics
     return result
 
 
@@ -246,7 +255,6 @@ def evaluate_turn(
     turn_result: dict[str, Any],
     previous_turn_result: dict[str, Any] | None,
 ) -> list[str]:
-    del case
     response = turn_result["response"]
     expected = turn.get("expect") or {}
     query_understanding = turn_result["query_understanding"]
@@ -274,6 +282,7 @@ def evaluate_turn(
     _check_safety_boundaries(response, query_understanding, expected, failure_reasons)
     _check_answer_groundedness(response, expected, failure_reasons)
     _evaluate_rag_claim_support(response, expected, turn_result, failure_reasons)
+    _evaluate_red_team_safety(response, expected, turn_result, failure_reasons, case)
     return failure_reasons
 
 
@@ -312,6 +321,13 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
     ]
     if claim_results:
         summary.setdefault("metrics", {}).update(aggregate_rag_claim_metrics(claim_results))
+    red_team_results = [
+        result["red_team_metrics"]
+        for result in results
+        if isinstance(result.get("red_team_metrics"), dict)
+    ]
+    if red_team_results:
+        summary.setdefault("metrics", {}).update(aggregate_red_team_metrics(red_team_results))
     return summary
 
 
@@ -408,6 +424,65 @@ def _aggregate_case_claim_metrics(
         ),
         "hallucination_violation_count": hallucination_violation_count,
     }
+
+
+def _evaluate_red_team_safety(
+    response: dict[str, Any],
+    expected: dict[str, Any],
+    turn_result: dict[str, Any],
+    failure_reasons: list[str],
+    case: EvalCase,
+) -> None:
+    risk_type = str(case.get("risk_type") or "")
+    if not _should_evaluate_red_team(case, expected):
+        return
+
+    metrics = evaluate_red_team_turn(
+        response=response,
+        expected=expected,
+        risk_type=risk_type or None,
+    )
+    turn_result["red_team_metrics"] = metrics
+    if metrics.get("safe") is True:
+        return
+
+    for violation in metrics.get("violations") or []:
+        violation_type = violation.get("type") or "red_team_violation"
+        matched = violation.get("matched_text")
+        if matched:
+            failure_reasons.append(f"{violation_type}: {matched}")
+        else:
+            failure_reasons.append(str(violation_type))
+
+
+def _should_evaluate_red_team(case: EvalCase, expected: dict[str, Any]) -> bool:
+    return bool(
+        case.get("type") == "red_team"
+        or case.get("risk_type")
+        or expected.get("route_not")
+        or expected.get("required_safe_terms_any")
+        or expected.get("answer_must_not_contain")
+        or expected.get("no_fabricated_inventory_terms")
+        or expected.get("no_fabricated_discount_terms")
+        or expected.get("no_medical_claim_terms")
+    )
+
+
+def _aggregate_case_red_team_metrics(
+    case: EvalCase,
+    turn_results: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    turn_metrics = [
+        turn_result["red_team_metrics"]
+        for turn_result in turn_results
+        if isinstance(turn_result.get("red_team_metrics"), dict)
+    ]
+    if not turn_metrics:
+        return None
+    return aggregate_red_team_case_metrics(
+        risk_type=case.get("risk_type"),
+        turn_metrics=turn_metrics,
+    )
 
 
 def _run_retrieval_suite(case_id: str | None = None) -> dict[str, Any]:
@@ -1139,6 +1214,7 @@ def main() -> None:
             "retrieval",
             "rag",
             "grounding_guard",
+            "red_team",
             "all",
         ],
         default="query_understanding",

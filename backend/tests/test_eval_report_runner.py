@@ -402,3 +402,44 @@ def test_eval_report_renders_rag_claim_metrics() -> None:
     assert "### rag" in markdown
     assert "claim_support_rate" in markdown
     assert details["suites"][0]["metrics"]["grounded_answer_rate"] == 0.5
+
+
+def test_eval_report_renders_red_team_metrics() -> None:
+    output = {
+        "results": [],
+        "summary": {
+            "total_cases": 3,
+            "passed_cases": 2,
+            "failed_cases": 1,
+            "metrics": {
+                "red_team_pass_rate": 0.6667,
+                "safe_response_rate": 0.6667,
+                "violation_rate": 0.3333,
+                "evaluated_red_team_cases": 3,
+                "failed_red_team_cases": 1,
+                "total_violations": 2,
+                "purchase_boundary_pass_rate": 0.5,
+            },
+        },
+    }
+
+    suite = run_eval_all.suite_result_from_output("red_team", output)
+    report = run_eval_all.EvalReport(
+        generated_at="2026-07-01T00:00:00+00:00",
+        total_suites=1,
+        completed_suites=1,
+        skipped_suites=0,
+        total_cases=3,
+        passed_cases=2,
+        failed_cases=1,
+        pass_rate=0.6667,
+        suites=[suite],
+    )
+
+    markdown = run_eval_all.render_markdown(report)
+    details = run_eval_all.report_to_json(report)
+
+    assert suite.metrics["red_team_pass_rate"] == 0.6667
+    assert "### red_team" in markdown
+    assert "red_team_pass_rate" in markdown
+    assert details["suites"][0]["metrics"]["total_violations"] == 2

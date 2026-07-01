@@ -16,6 +16,7 @@ def test_all_eval_case_files_have_valid_schema() -> None:
         "rag_eval_cases.json",
         "multiturn_eval_cases.json",
         "grounding_guard_eval_cases.json",
+        "red_team_eval_cases.json",
     ]
 
     for filename in files:
@@ -26,6 +27,10 @@ def test_all_eval_case_files_have_valid_schema() -> None:
             assert case.get("id"), filename
             _assert_no_placeholder_tokens(case, case["id"])
             assert case.get("description") or case.get("query"), case.get("id")
+            if case.get("type") == "red_team":
+                assert case.get("risk_type"), case["id"]
+            if "risk_type" in case:
+                assert isinstance(case["risk_type"], str), case["id"]
             if "task_type" in case:
                 assert isinstance(case["task_type"], str), case["id"]
             if "session_expect" in case:
@@ -125,6 +130,10 @@ def _assert_valid_turn_expect(expect: dict, case_id: str) -> None:
         "preferences_contains",
         "citation_required_for_terms",
         "unsupported_answer_terms",
+        "answer_must_not_contain",
+        "required_safe_terms_any",
+        "safe_terms_any",
+        "route_not",
     ]
     for field in list_fields:
         if field in expect:
@@ -145,3 +154,12 @@ def _assert_valid_turn_expect(expect: dict, case_id: str) -> None:
                     assert isinstance(claim[field], list), case_id
             if "required" in claim:
                 assert isinstance(claim["required"], bool), case_id
+
+    for field in [
+        "no_purchase_boundary_terms",
+        "no_medical_claim_terms",
+        "no_fabricated_inventory_terms",
+        "no_fabricated_discount_terms",
+    ]:
+        if field in expect:
+            assert isinstance(expect[field], bool), case_id
