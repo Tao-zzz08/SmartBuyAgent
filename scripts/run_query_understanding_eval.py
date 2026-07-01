@@ -7,6 +7,7 @@ import json
 import sys
 
 from multiturn_metrics import aggregate_multiturn_metrics, evaluate_multiturn_session
+from rag_claim_metrics import aggregate_rag_claim_metrics, evaluate_claim_support
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -208,6 +209,9 @@ def run_case(client: Any, case: EvalCase, *, mode: str = "chat") -> EvalResult:
     }
     if session_metrics is not None:
         result["session_metrics"] = session_metrics
+    claim_metrics = _aggregate_case_claim_metrics(turn_results)
+    if claim_metrics is not None:
+        result["claim_metrics"] = claim_metrics
     return result
 
 
@@ -269,6 +273,7 @@ def evaluate_turn(
     _check_comparison(response, query_understanding, expected, failure_reasons, previous_turn_result)
     _check_safety_boundaries(response, query_understanding, expected, failure_reasons)
     _check_answer_groundedness(response, expected, failure_reasons)
+    _evaluate_rag_claim_support(response, expected, turn_result, failure_reasons)
     return failure_reasons
 
 
@@ -298,7 +303,15 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
         if isinstance(result.get("session_metrics"), dict)
     ]
     if session_results:
-        summary["metrics"] = aggregate_multiturn_metrics(session_results)
+        summary.setdefault("metrics", {}).update(aggregate_multiturn_metrics(session_results))
+    claim_results = [
+        turn_result["claim_metrics"]
+        for result in results
+        for turn_result in result.get("turns", [])
+        if isinstance(turn_result.get("claim_metrics"), dict)
+    ]
+    if claim_results:
+        summary.setdefault("metrics", {}).update(aggregate_rag_claim_metrics(claim_results))
     return summary
 
 
@@ -308,6 +321,93 @@ def _should_evaluate_session(case: EvalCase) -> bool:
         or bool(case.get("task_type"))
         or bool(case.get("session_expect"))
     )
+
+
+def _evaluate_rag_claim_support(
+    response: dict[str, Any],
+    expected: dict[str, Any],
+    turn_result: dict[str, Any],
+    failure_reasons: list[str],
+) -> None:
+    if not _has_claim_support_expect(expected):
+        return
+
+    claim_metrics = evaluate_claim_support(
+        answer=str(response.get("answer") or ""),
+        citations=response.get("citations", []) or [],
+        expected_claims=expected.get("expected_claims") or [],
+        citation_required_for_terms=expected.get("citation_required_for_terms") or [],
+        unsupported_answer_terms=expected.get("unsupported_answer_terms") or [],
+    )
+    turn_result["claim_metrics"] = claim_metrics
+    if claim_metrics.get("grounded") is True:
+        return
+
+    for claim_result in claim_metrics.get("claim_results") or []:
+        failure_reason = claim_result.get("failure_reason")
+        if not failure_reason:
+            continue
+        claim_id = claim_result.get("id")
+        failure_reasons.append(f"{failure_reason}: {claim_id}")
+
+    for violation in claim_metrics.get("violations") or []:
+        violation_type = violation.get("type") or "claim_support_violation"
+        term = violation.get("term")
+        failure_reasons.append(f"{violation_type}: {term}")
+
+
+def _has_claim_support_expect(expected: dict[str, Any]) -> bool:
+    return bool(
+        expected.get("expected_claims")
+        or expected.get("citation_required_for_terms")
+        or expected.get("unsupported_answer_terms")
+    )
+
+
+def _aggregate_case_claim_metrics(
+    turn_results: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    claim_results = [
+        turn_result["claim_metrics"]
+        for turn_result in turn_results
+        if isinstance(turn_result.get("claim_metrics"), dict)
+    ]
+    if not claim_results:
+        return None
+
+    triggered_claims = sum(int(result.get("triggered_claims") or 0) for result in claim_results)
+    supported_claims = sum(int(result.get("supported_claims") or 0) for result in claim_results)
+    unsupported_claims = sum(int(result.get("unsupported_claims") or 0) for result in claim_results)
+    missing_required_claims = sum(
+        int(result.get("missing_required_claims") or 0) for result in claim_results
+    )
+    hallucination_violation_count = sum(
+        int(result.get("hallucination_violation_count") or 0)
+        for result in claim_results
+    )
+    return {
+        "grounded": all(result.get("grounded") is True for result in claim_results),
+        "triggered_claims": triggered_claims,
+        "supported_claims": supported_claims,
+        "unsupported_claims": unsupported_claims,
+        "missing_required_claims": missing_required_claims,
+        "claim_support_rate": (
+            round(supported_claims / triggered_claims, 4)
+            if triggered_claims
+            else None
+        ),
+        "citation_coverage_rate": (
+            round(supported_claims / triggered_claims, 4)
+            if triggered_claims
+            else None
+        ),
+        "unsupported_claim_rate": (
+            round(unsupported_claims / triggered_claims, 4)
+            if triggered_claims
+            else None
+        ),
+        "hallucination_violation_count": hallucination_violation_count,
+    }
 
 
 def _run_retrieval_suite(case_id: str | None = None) -> dict[str, Any]:

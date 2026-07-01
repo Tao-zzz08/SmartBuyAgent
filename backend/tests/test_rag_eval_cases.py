@@ -62,3 +62,65 @@ def test_core_rag_eval_cases_pass_with_fake_client() -> None:
 
     assert output["summary"]["failed_cases"] == 0
     assert output["summary"]["passed_cases"] == len(cases)
+
+
+def test_rag_eval_summary_includes_claim_support_metrics() -> None:
+    cases = [
+        case
+        for case in load_suite_cases("rag")
+        if case["id"]
+        in {
+            "phone_camera_knowledge_grounded_answer",
+            "phone_battery_knowledge_grounded_answer",
+            "shoes_size_grounded_answer",
+        }
+    ]
+
+    output = run_eval(cases, client=RegressionFakeClient())
+
+    assert output["summary"]["failed_cases"] == 0
+    assert "metrics" in output["summary"]
+    metrics = output["summary"]["metrics"]
+    assert metrics["claim_support_rate"] == 1.0
+    assert metrics["grounded_answer_rate"] == 1.0
+    assert metrics["evaluated_claim_cases"] == len(cases)
+    assert any(
+        "claim_metrics" in turn
+        for result in output["results"]
+        for turn in result["turns"]
+    )
+    assert all("claim_metrics" in result for result in output["results"])
+
+
+def test_rag_eval_fails_when_answer_claim_lacks_citation_support() -> None:
+    source_case = next(
+        case
+        for case in load_suite_cases("rag")
+        if case["id"] == "phone_camera_knowledge_grounded_answer"
+    )
+    case = {
+        "id": "unsupported_claim_case",
+        "description": "Answer claim should fail when citations do not support it.",
+        "query": source_case["query"],
+        "expected_category": "phone",
+        "expect": {
+            "intent": "product_knowledge",
+            "category": "phone",
+            "min_citations": 1,
+            "expected_claims": [
+                {
+                    "id": "unsupported_camera_claim",
+                    "answer_terms_any": source_case["expect"]["answer_must_include_any"],
+                    "citation_terms_any": ["definitely_not_in_fixture_citations"],
+                }
+            ],
+        },
+    }
+
+    output = run_eval([case], client=RegressionFakeClient())
+
+    assert output["summary"]["failed_cases"] == 1
+    assert output["results"][0]["passed"] is False
+    assert output["results"][0]["turns"][0]["claim_metrics"]["grounded"] is False
+    reasons = output["results"][0]["failure_reasons"][0]["reasons"]
+    assert any("citation_support_missing" in reason for reason in reasons)

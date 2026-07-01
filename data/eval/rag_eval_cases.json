@@ -11,7 +11,39 @@
       "citation_keywords_any": ["传感器", "光圈", "防抖", "影像", "算法"],
       "answer_must_include_any": ["传感器", "防抖", "影像"],
       "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
-      "product_cards_allowed": false
+      "product_cards_allowed": false,
+      "expected_claims": [
+        {
+          "id": "camera_sensor",
+          "claim": "camera sensor",
+          "answer_terms_any": ["传感器"],
+          "citation_terms_any": ["传感器"],
+          "required": true
+        },
+        {
+          "id": "camera_stabilization",
+          "claim": "camera stabilization",
+          "answer_terms_any": ["防抖"],
+          "citation_terms_any": ["防抖"],
+          "required": true
+        },
+        {
+          "id": "camera_algorithm",
+          "claim": "camera algorithm",
+          "answer_terms_any": ["影像", "算法"],
+          "citation_terms_any": ["影像", "算法"],
+          "required": true
+        },
+        {
+          "id": "camera_aperture",
+          "claim": "camera aperture",
+          "answer_terms_any": ["光圈"],
+          "citation_terms_any": ["光圈"],
+          "required": false
+        }
+      ],
+      "citation_required_for_terms": ["传感器", "防抖", "影像"],
+      "unsupported_answer_terms": ["立即购买", "下单", "支付", "购物车", "购买链接"]
     }
   },
   {
@@ -26,7 +58,39 @@
       "citation_keywords_any": ["电池容量", "快充", "功耗", "续航"],
       "answer_must_include_any": ["电池容量", "快充", "功耗", "续航"],
       "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
-      "product_cards_allowed": false
+      "product_cards_allowed": false,
+      "expected_claims": [
+        {
+          "id": "battery_capacity",
+          "claim": "battery capacity",
+          "answer_terms_any": ["电池容量"],
+          "citation_terms_any": ["电池容量"],
+          "required": true
+        },
+        {
+          "id": "battery_fast_charge",
+          "claim": "battery fast charge",
+          "answer_terms_any": ["快充"],
+          "citation_terms_any": ["快充"],
+          "required": true
+        },
+        {
+          "id": "battery_power_usage",
+          "claim": "battery power usage",
+          "answer_terms_any": ["功耗"],
+          "citation_terms_any": ["功耗"],
+          "required": true
+        },
+        {
+          "id": "battery_endurance",
+          "claim": "battery endurance",
+          "answer_terms_any": ["续航"],
+          "citation_terms_any": ["续航"],
+          "required": true
+        }
+      ],
+      "citation_required_for_terms": ["电池容量", "快充", "功耗", "续航"],
+      "unsupported_answer_terms": ["立即购买", "下单", "支付", "购物车", "购买链接"]
     }
   },
   {
@@ -41,7 +105,39 @@
       "citation_keywords_any": ["尺码", "脚长", "试穿", "鞋楦"],
       "answer_must_include_any": ["尺码", "脚长", "试穿"],
       "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
-      "product_cards_allowed": false
+      "product_cards_allowed": false,
+      "expected_claims": [
+        {
+          "id": "shoes_size",
+          "claim": "shoes size",
+          "answer_terms_any": ["尺码"],
+          "citation_terms_any": ["尺码"],
+          "required": true
+        },
+        {
+          "id": "shoes_foot_length",
+          "claim": "shoes foot length",
+          "answer_terms_any": ["脚长"],
+          "citation_terms_any": ["脚长"],
+          "required": true
+        },
+        {
+          "id": "shoes_try_on",
+          "claim": "shoes try on",
+          "answer_terms_any": ["试穿"],
+          "citation_terms_any": ["试穿"],
+          "required": true
+        },
+        {
+          "id": "shoes_last",
+          "claim": "shoes last",
+          "answer_terms_any": ["鞋楦"],
+          "citation_terms_any": ["鞋楦"],
+          "required": false
+        }
+      ],
+      "citation_required_for_terms": ["尺码", "脚长", "试穿"],
+      "unsupported_answer_terms": ["立即购买", "下单", "支付", "购物车", "购买链接"]
     }
   },
   {
@@ -56,7 +152,39 @@
       "citation_keywords_any": ["鞋底", "纹路", "防滑", "抓地"],
       "answer_must_include_any": ["鞋底", "防滑", "抓地"],
       "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
-      "product_cards_allowed": false
+      "product_cards_allowed": false,
+      "expected_claims": [
+        {
+          "id": "shoes_outsole",
+          "claim": "shoes outsole",
+          "answer_terms_any": ["鞋底"],
+          "citation_terms_any": ["鞋底"],
+          "required": true
+        },
+        {
+          "id": "shoes_anti_slip",
+          "claim": "shoes anti slip",
+          "answer_terms_any": ["防滑"],
+          "citation_terms_any": ["防滑"],
+          "required": true
+        },
+        {
+          "id": "shoes_grip",
+          "claim": "shoes grip",
+          "answer_terms_any": ["抓地"],
+          "citation_terms_any": ["抓地"],
+          "required": true
+        },
+        {
+          "id": "shoes_tread",
+          "claim": "shoes tread",
+          "answer_terms_any": ["纹路"],
+          "citation_terms_any": ["纹路"],
+          "required": false
+        }
+      ],
+      "citation_required_for_terms": ["鞋底", "防滑", "抓地"],
+      "unsupported_answer_terms": ["立即购买", "下单", "支付", "购物车", "购买链接"]
     }
   },
   {
@@ -71,7 +199,39 @@
       "citation_keywords_any": ["温和", "保湿", "刺激", "敏感肌"],
       "answer_must_include_any": ["温和", "保湿", "敏感肌"],
       "answer_forbidden": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病", "立即购买", "购买链接"],
-      "product_cards_allowed": false
+      "product_cards_allowed": false,
+      "expected_claims": [
+        {
+          "id": "skincare_gentle",
+          "claim": "skincare gentle",
+          "answer_terms_any": ["温和"],
+          "citation_terms_any": ["温和"],
+          "required": true
+        },
+        {
+          "id": "skincare_moisturizing",
+          "claim": "skincare moisturizing",
+          "answer_terms_any": ["保湿"],
+          "citation_terms_any": ["保湿"],
+          "required": true
+        },
+        {
+          "id": "skincare_sensitive",
+          "claim": "skincare sensitive",
+          "answer_terms_any": ["敏感肌"],
+          "citation_terms_any": ["敏感肌"],
+          "required": false
+        },
+        {
+          "id": "skincare_low_irritation",
+          "claim": "skincare low irritation",
+          "answer_terms_any": ["刺激"],
+          "citation_terms_any": ["刺激"],
+          "required": false
+        }
+      ],
+      "citation_required_for_terms": ["温和", "保湿", "敏感肌"],
+      "unsupported_answer_terms": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病", "立即购买", "购买链接"]
     }
   },
   {
@@ -135,7 +295,32 @@
       "citation_must_have_fields": ["chunk_id", "source", "text"],
       "answer_must_include_any": ["拍照", "影像", "防抖", "传感器"],
       "citations_must_support_any": ["拍照", "影像", "防抖", "传感器"],
-      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"]
+      "answer_forbidden": ["立即购买", "下单", "支付", "购物车", "购买链接"],
+      "expected_claims": [
+        {
+          "id": "recommend_camera",
+          "claim": "recommend camera",
+          "answer_terms_any": ["拍照"],
+          "citation_terms_any": ["拍照"],
+          "required": true
+        },
+        {
+          "id": "recommend_image",
+          "claim": "recommend image",
+          "answer_terms_any": ["影像"],
+          "citation_terms_any": ["影像"],
+          "required": true
+        },
+        {
+          "id": "recommend_stabilization",
+          "claim": "recommend stabilization",
+          "answer_terms_any": ["防抖"],
+          "citation_terms_any": ["防抖"],
+          "required": true
+        }
+      ],
+      "citation_required_for_terms": ["拍照", "影像", "防抖", "传感器"],
+      "unsupported_answer_terms": ["立即购买", "下单", "支付", "购物车", "购买链接"]
     }
   }
 ]

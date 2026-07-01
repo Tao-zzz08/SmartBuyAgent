@@ -42,6 +42,7 @@ def test_all_eval_case_files_have_valid_schema() -> None:
             else:
                 assert case.get("query") or case.get("answer") or case.get("context"), case["id"]
                 assert isinstance(case.get("expect", {}), dict), case["id"]
+                _assert_valid_turn_expect(case.get("expect", {}), case["id"])
             if "gold_relevance" in case:
                 assert isinstance(case["gold_relevance"], dict), case["id"]
                 assert case["gold_relevance"], case["id"]
@@ -122,7 +123,25 @@ def _assert_valid_turn_expect(expect: dict, case_id: str) -> None:
         "preferences_include",
         "negative_preferences_contains",
         "preferences_contains",
+        "citation_required_for_terms",
+        "unsupported_answer_terms",
     ]
     for field in list_fields:
         if field in expect:
             assert isinstance(expect[field], list), case_id
+
+    if "expected_claims" in expect:
+        assert isinstance(expect["expected_claims"], list), case_id
+        for claim in expect["expected_claims"]:
+            assert isinstance(claim, dict), case_id
+            assert claim.get("id"), case_id
+            for field in [
+                "answer_terms_any",
+                "answer_terms_all",
+                "citation_terms_any",
+                "citation_terms_all",
+            ]:
+                if field in claim:
+                    assert isinstance(claim[field], list), case_id
+            if "required" in claim:
+                assert isinstance(claim["required"], bool), case_id

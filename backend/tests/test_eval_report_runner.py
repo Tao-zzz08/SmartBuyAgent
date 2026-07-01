@@ -359,3 +359,46 @@ def test_eval_report_renders_multiturn_session_metrics() -> None:
     assert "### multiturn" in markdown
     assert "session_success_rate" in markdown
     assert details["suites"][0]["metrics"]["category_switch_accuracy"] == 0.5
+
+
+def test_eval_report_renders_rag_claim_metrics() -> None:
+    output = {
+        "results": [],
+        "summary": {
+            "total_cases": 2,
+            "passed_cases": 2,
+            "failed_cases": 0,
+            "metrics": {
+                "claim_support_rate": 0.9,
+                "citation_coverage_rate": 0.9,
+                "unsupported_claim_rate": 0.1,
+                "grounded_answer_rate": 0.5,
+                "evaluated_claim_cases": 2,
+                "triggered_claims": 10,
+                "unsupported_claims": 1,
+                "missing_required_claims": 0,
+                "hallucination_violation_count": 0,
+            },
+        },
+    }
+
+    suite = run_eval_all.suite_result_from_output("rag", output)
+    report = run_eval_all.EvalReport(
+        generated_at="2026-07-01T00:00:00+00:00",
+        total_suites=1,
+        completed_suites=1,
+        skipped_suites=0,
+        total_cases=2,
+        passed_cases=2,
+        failed_cases=0,
+        pass_rate=1.0,
+        suites=[suite],
+    )
+
+    markdown = run_eval_all.render_markdown(report)
+    details = run_eval_all.report_to_json(report)
+
+    assert suite.metrics["claim_support_rate"] == 0.9
+    assert "### rag" in markdown
+    assert "claim_support_rate" in markdown
+    assert details["suites"][0]["metrics"]["grounded_answer_rate"] == 0.5

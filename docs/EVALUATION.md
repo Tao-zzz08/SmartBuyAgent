@@ -132,6 +132,19 @@ still run the rule-based assertions, but they are skipped for ranking averages.
 - unknown knowledge questions should clarify or answer safely instead of
   fabricating clinical conclusions
 
+RAG Eval also includes deterministic claim support checks:
+
+- Claim Support Rate
+- Citation Coverage Rate
+- Unsupported Claim Rate
+- Grounded Answer Rate
+- Missing Required Claims
+- Hallucination Violation Count
+
+Each claim is declared in the eval case with answer trigger terms and citation
+support terms. The eval does not use LLM-as-judge; it deterministically checks
+whether answer claims are supported by retrieved citations.
+
 ### Multiturn Eval
 
 `multiturn_eval_cases.json` validates complete multi-turn shopping flows:
@@ -202,7 +215,7 @@ python ../scripts/run_eval_all.py \
 The unified report aggregates QueryUnderstanding, Retrieval, RAG, Multiturn,
 and GroundingGuard suites. It includes suite summaries, pass rates, failure
 reason counts, failed case details, suite metrics such as retrieval ranking
-metrics and multiturn session success metrics, and stable machine-readable JSON. The
+metrics, RAG claim support metrics, and multiturn session success metrics, and stable machine-readable JSON. The
 report layer is deterministic and does not require external LLM APIs or
 external network access.
 
