@@ -31,6 +31,25 @@ def test_all_eval_case_files_have_valid_schema() -> None:
             else:
                 assert case.get("query") or case.get("answer") or case.get("context"), case["id"]
                 assert isinstance(case.get("expect", {}), dict), case["id"]
+            if "gold_relevance" in case:
+                assert isinstance(case["gold_relevance"], dict), case["id"]
+                assert case["gold_relevance"], case["id"]
+                for product_id, relevance in case["gold_relevance"].items():
+                    assert product_id, case["id"]
+                    assert isinstance(relevance, (int, float)), case["id"]
+                    assert relevance > 0, case["id"]
+            if "hard_filters" in case:
+                assert isinstance(case["hard_filters"], dict), case["id"]
+                allowed_hard_filters = {
+                    "category",
+                    "price_lte",
+                    "price_gte",
+                    "exclude_brands",
+                    "exclude_product_ids",
+                    "required_in_stock",
+                    "forbidden_terms",
+                }
+                assert set(case["hard_filters"]) <= allowed_hard_filters, case["id"]
 
 
 def test_eval_case_ids_are_unique_per_file() -> None:

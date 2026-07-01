@@ -5,6 +5,13 @@ from types import SimpleNamespace
 from typing import Any, Dict
 import json
 import sys
+import time
+
+from retrieval_metrics import (
+    aggregate_retrieval_metrics,
+    compute_filter_compliance,
+    compute_retrieval_metrics,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +45,7 @@ def evaluate_product_case(
     product_service: Any,
     knowledge_service: Any,
 ) -> EvalResult:
+    started = time.perf_counter()
     filters_payload = case.get("structured_filters") or {}
     expect = case.get("expect") or _legacy_product_expect(case)
     top_k = int(expect.get("top_k") or case.get("top_k") or 5)
@@ -65,13 +73,38 @@ def evaluate_product_case(
     _check_product_results(products, expect, failure_reasons)
     _check_knowledge_results(citations, _product_case_knowledge_expect(case), failure_reasons)
 
-    actual_product_ids = [_field(product, "product_id") for product in products]
+    latency_ms = _elapsed_ms(started)
+    actual_product_ids = [
+        str(product_id)
+        for product_id in [_field(product, "product_id") for product in products]
+        if product_id
+    ]
+    product_dicts = [_product_to_dict(product) for product in products]
+    filter_metrics = compute_filter_compliance(
+        product_dicts,
+        _hard_filters_for_product_case(case, expect, filters),
+    )
+    if filter_metrics["filter_violation_count"]:
+        failure_reasons.append("hard filter violation")
+    ranking_metrics = compute_retrieval_metrics(
+        actual_product_ids,
+        case.get("gold_relevance"),
+        k=top_k,
+    )
+    metrics = {
+        **ranking_metrics,
+        "filter_compliance": filter_metrics["filter_compliance"],
+        "filter_violation_count": filter_metrics["filter_violation_count"],
+        "latency_ms": latency_ms,
+    }
+
     return {
         "id": case["id"],
         "type": "product_retrieval",
         "query": case["query"],
         "passed": not failure_reasons,
         "actual_product_ids": actual_product_ids,
+        "retrieved_product_ids": actual_product_ids,
         "result_count": len(products),
         "category_ok": not any(reason == "category mismatch" for reason in failure_reasons),
         "budget_ok": not any(reason == "budget constraint violated" for reason in failure_reasons),
@@ -79,6 +112,8 @@ def evaluate_product_case(
             _product_texts(products),
             expect.get("forbidden_terms") or [],
         ),
+        "metrics": metrics,
+        "filter_violations": filter_metrics["filter_violations"],
         "citation_keyword_hit": keyword_hit(
             _citation_texts(citations),
             _product_case_knowledge_expect(case).get("must_contain_any") or [],
@@ -92,6 +127,7 @@ def evaluate_knowledge_case(
     case: EvalCase,
     knowledge_service: Any,
 ) -> EvalResult:
+    started = time.perf_counter()
     expect = case.get("expect") or _legacy_knowledge_expect(case)
     top_k = int(expect.get("top_k") or case.get("top_k") or 5)
     citations = knowledge_service.search_knowledge(
@@ -124,6 +160,7 @@ def evaluate_knowledge_case(
             _citation_texts(citations),
             expect.get("forbidden_terms") or [],
         ),
+        "metrics": {"latency_ms": _elapsed_ms(started)},
         "failure_reasons": failure_reasons,
     }
 
@@ -197,6 +234,7 @@ def summarize_results(results: list[EvalResult]) -> dict[str, Any]:
         "min_result_pass_rate": _rate(min_result_passes, total_cases),
         "knowledge_chunk_hit_rate": _rate(knowledge_hits, len(knowledge_results)),
         "forbidden_term_violation_count": forbidden_violations,
+        "metrics": aggregate_retrieval_metrics(results),
     }
 
 
@@ -215,6 +253,7 @@ def print_report(eval_output: dict[str, Any]) -> None:
                 f"{result['negative_preference_violations']}"
             )
             print(f"citation_keyword_hit: {_bool_text(result['citation_keyword_hit'])}")
+            print(f"metrics: {result.get('metrics', {})}")
         else:
             print(
                 "actual_citation_sources: "
@@ -222,6 +261,7 @@ def print_report(eval_output: dict[str, Any]) -> None:
             )
             print(f"citation_count: {result['citation_count']}")
             print(f"citation_keyword_hit: {_bool_text(result['citation_keyword_hit'])}")
+            print(f"metrics: {result.get('metrics', {})}")
 
         if not result["passed"]:
             print("failure_reasons:")
@@ -362,6 +402,58 @@ def _product_case_knowledge_expect(case: EvalCase) -> dict[str, Any]:
     }
 
 
+def _hard_filters_for_product_case(
+    case: EvalCase,
+    expect: dict[str, Any],
+    filters: Any,
+) -> dict[str, Any]:
+    hard_filters = dict(case.get("hard_filters") or {})
+    if "category" not in hard_filters:
+        hard_filters["category"] = (
+            expect.get("all_category")
+            or _category_from_id(_field(filters, "category_id"))
+            or (case.get("structured_filters") or {}).get("category")
+        )
+    if "price_lte" not in hard_filters:
+        hard_filters["price_lte"] = expect.get("max_price") or _field(filters, "budget_max")
+    if "price_gte" not in hard_filters:
+        hard_filters["price_gte"] = _field(filters, "budget_min")
+
+    exclude_brands = list(hard_filters.get("exclude_brands") or [])
+    for term in _field(filters, "brand_exclude", []) or []:
+        if term not in exclude_brands:
+            exclude_brands.append(term)
+    hard_filters["exclude_brands"] = exclude_brands
+
+    forbidden_terms = list(hard_filters.get("forbidden_terms") or [])
+    for term in expect.get("forbidden_terms") or []:
+        if term not in forbidden_terms:
+            forbidden_terms.append(term)
+    hard_filters["forbidden_terms"] = forbidden_terms
+    return {
+        key: value
+        for key, value in hard_filters.items()
+        if value is not None and value != []
+    }
+
+
+def _product_to_dict(product: Any) -> dict[str, Any]:
+    category_id = _field(product, "category_id")
+    return {
+        "product_id": _field(product, "product_id"),
+        "id": _field(product, "product_id"),
+        "category": _category_from_id(category_id) or _field(product, "category"),
+        "category_id": category_id,
+        "title": _field(product, "title"),
+        "brand": _field(product, "brand"),
+        "price": _field(product, "price"),
+        "tags": list(_field(product, "tags", []) or []),
+        "description": _field(product, "description"),
+        "product_text": _field(product, "product_text"),
+        "in_stock": _field(product, "in_stock", _field(product, "stock")),
+    }
+
+
 def _default_services() -> tuple[Any, Any, Any]:
     if str(BACKEND_DIR) not in sys.path:
         sys.path.insert(0, str(BACKEND_DIR))
@@ -473,6 +565,10 @@ def _failure_reason_counts(results: list[EvalResult]) -> dict[str, int]:
         for reason in result.get("failure_reasons", []):
             counts[reason] = counts.get(reason, 0) + 1
     return counts
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
 
 
 def _field(obj: Any, name: str, default: Any = None) -> Any:

@@ -50,6 +50,7 @@ class EvalSuiteResult:
     duration_ms: int | None = None
     status: str = "completed"
     reason: str | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     @property
     def pass_rate(self) -> float:
@@ -152,6 +153,7 @@ def suite_result_from_output(
         failures=failures,
         duration_ms=duration_ms,
         status="completed",
+        metrics=summary.get("metrics") or output.get("metrics") or {},
     )
 
 
@@ -229,6 +231,26 @@ def render_markdown(report: EvalReport) -> str:
 
     if not any_counts:
         lines.extend(["No failures were recorded.", ""])
+
+    lines.extend(["## Suite Metrics", ""])
+    any_metrics = False
+    for suite in report.suites:
+        if not suite.metrics:
+            continue
+        any_metrics = True
+        lines.extend(
+            [
+                f"### {suite.suite}",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+            ]
+        )
+        for key, value in sorted(suite.metrics.items()):
+            lines.append(f"| {key} | {_format_metric(value)} |")
+        lines.append("")
+    if not any_metrics:
+        lines.extend(["No suite metrics were recorded.", ""])
 
     lines.extend(["## Failed Cases", ""])
     any_failures = False
@@ -416,6 +438,14 @@ def _percent(rate: float | None) -> str:
 
 def _format_duration(duration_ms: int | None) -> str:
     return "-" if duration_ms is None else f"{duration_ms}ms"
+
+
+def _format_metric(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
 
 
 def _elapsed_ms(started: float) -> int:

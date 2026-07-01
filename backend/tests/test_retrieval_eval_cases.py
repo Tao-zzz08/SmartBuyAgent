@@ -96,6 +96,52 @@ def test_core_retrieval_eval_cases_pass_with_fake_services() -> None:
 
     assert output["summary"]["failed_cases"] == 0
     assert output["summary"]["passed_cases"] == len(cases)
+    assert output["summary"]["metrics"]["evaluated_ranking_cases"] >= 1
+    assert output["summary"]["metrics"]["empty_rate"] == 0
+    assert output["summary"]["metrics"]["filter_compliance_rate"] == 1.0
+    for result in output["results"]:
+        assert "metrics" in result
+        if result["type"] == "product_retrieval":
+            assert "recall_at_5" in result["metrics"]
+            assert "ndcg_at_5" in result["metrics"]
+            assert "mrr_at_5" in result["metrics"]
+            assert result["metrics"]["filter_compliance"] is True
+            assert result["filter_violations"] == []
+
+
+def test_retrieval_eval_metrics_tolerate_cases_without_gold_relevance() -> None:
+    catalog = load_fixture_catalog()
+    case = {
+        "id": "product_case_without_gold",
+        "type": "product_retrieval",
+        "query": "phone camera",
+        "structured_filters": {
+            "category": "phone",
+            "category_id": "cat_phone",
+            "budget_max": 5000,
+            "preferences": [],
+            "negative_preferences": [],
+        },
+        "expect": {
+            "min_results": 1,
+            "all_category": "phone",
+            "max_price": 5000,
+            "top_k": 5,
+        },
+    }
+
+    output = run_eval(
+        [case],
+        RoutingFakeProductService(catalog["products"]),
+        RoutingFakeKnowledgeService(catalog["knowledge_chunks"]),
+    )
+
+    result = output["results"][0]
+    assert result["passed"] is True
+    assert result["metrics"]["recall_at_5"] is None
+    assert result["metrics"]["ndcg_at_5"] is None
+    assert result["metrics"]["mrr_at_5"] is None
+    assert output["summary"]["metrics"]["evaluated_ranking_cases"] == 0
 
 
 def load_fixture_catalog() -> dict:

@@ -104,6 +104,21 @@ fixed product IDs:
 - knowledge chunk keyword hit rate
 - forbidden term violations in retrieved chunks
 
+Retrieval Eval also reports ranking and compliance metrics for annotated
+product cases:
+
+- Recall@K
+- nDCG@K
+- MRR@K
+- Filter Compliance Rate
+- Negative Preference Violation Rate
+- Empty Rate
+- Latency P50/P95
+
+These metrics are computed from manually annotated `gold_relevance` and
+`hard_filters` in selected retrieval eval cases. Cases without gold relevance
+still run the rule-based assertions, but they are skipped for ranking averages.
+
 ### RAG Eval
 
 `rag_eval_cases.json` validates grounded final answers:
@@ -172,7 +187,8 @@ python ../scripts/run_eval_all.py \
 
 The unified report aggregates QueryUnderstanding, Retrieval, RAG, Multiturn,
 and GroundingGuard suites. It includes suite summaries, pass rates, failure
-reason counts, failed case details, and stable machine-readable JSON. The
+reason counts, failed case details, suite metrics such as retrieval ranking
+metrics, and stable machine-readable JSON. The
 report layer is deterministic and does not require external LLM APIs or
 external network access.
 

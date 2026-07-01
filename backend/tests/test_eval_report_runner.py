@@ -85,6 +85,12 @@ def test_write_report_files_creates_markdown_and_json(tmp_path: Path) -> None:
                 total_cases=1,
                 passed_cases=0,
                 failed_cases=1,
+                metrics={
+                    "recall_at_5": 0.75,
+                    "ndcg_at_5": 0.8,
+                    "mrr_at_5": 1.0,
+                    "filter_compliance_rate": 0.5,
+                },
                 failure_reason_counts={"insufficient_results": 1},
                 failures=[
                     run_eval_all.EvalFailure(
@@ -112,16 +118,20 @@ def test_write_report_files_creates_markdown_and_json(tmp_path: Path) -> None:
     assert "# SmartBuyAgent Eval Report" in markdown
     assert "## Summary" in markdown
     assert "## Suite Summary" in markdown
+    assert "## Suite Metrics" in markdown
     assert "## Failed Cases" in markdown
     assert "Completed Suites" in markdown
     assert "Skipped Suites" in markdown
     assert "insufficient_results" in markdown
+    assert "recall_at_5" in markdown
+    assert "ndcg_at_5" in markdown
     assert details["completed_suites"] == 1
     assert details["skipped_suites"] == 1
     assert details["total_cases"] == 2
     assert details["failed_cases"] == 1
     assert details["pass_rate"] == 0.5
     assert details["suites"][1]["pass_rate"] == 0.0
+    assert details["suites"][1]["metrics"]["recall_at_5"] == 0.75
     assert details["suites"][1]["failures"][0]["case_id"] == "retrieval_phone"
 
 
@@ -281,4 +291,29 @@ def test_markdown_handles_no_failed_cases() -> None:
 
     assert "No failures were recorded." in markdown
     assert "No failed cases." in markdown
+    assert "No suite metrics were recorded." in markdown
     assert "grounding_guard" in markdown
+
+
+def test_suite_result_from_output_preserves_metrics() -> None:
+    output = {
+        "results": [],
+        "summary": {
+            "total_cases": 0,
+            "passed_cases": 0,
+            "failed_cases": 0,
+            "metrics": {
+                "recall_at_5": 0.84,
+                "ndcg_at_5": 0.76,
+                "mrr_at_5": 0.91,
+            },
+        },
+    }
+
+    result = run_eval_all.suite_result_from_output("retrieval", output)
+
+    assert result.metrics == {
+        "recall_at_5": 0.84,
+        "ndcg_at_5": 0.76,
+        "mrr_at_5": 0.91,
+    }

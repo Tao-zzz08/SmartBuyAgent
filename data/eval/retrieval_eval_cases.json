@@ -1,268 +1,514 @@
 [
-  {
-    "id": "phone_camera_under_5000",
-    "type": "product_retrieval",
-    "description": "5000 元以内拍照手机召回应限定手机品类、预算和影像偏好。",
-    "query": "预算5000，推荐拍照好的手机",
-    "structured_filters": {
-      "category": "phone",
-      "category_id": "cat_phone",
-      "budget_max": 5000,
-      "preferences": ["拍照"],
-      "negative_preferences": []
+    {
+        "id":  "phone_camera_under_5000",
+        "type":  "product_retrieval",
+        "description":  "5000 元以内拍照手机召回应限定手机品类、预算和影像偏好。",
+        "query":  "预算5000，推荐拍照好的手机",
+        "structured_filters":  {
+                                   "category":  "phone",
+                                   "category_id":  "cat_phone",
+                                   "budget_max":  5000,
+                                   "preferences":  [
+                                                       "拍照"
+                                                   ],
+                                   "negative_preferences":  [
+
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "phone",
+                       "max_price":  5000,
+                       "must_match_any":  [
+                                              "拍照",
+                                              "影像",
+                                              "camera"
+                                          ],
+                       "forbidden_terms":  [
+
+                                           ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_phone_apple":  1,
+                               "fixture_phone_camera":  3
+                           },
+        "hard_filters":  {
+                             "category":  "phone",
+                             "price_lte":  5000
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "phone",
-      "max_price": 5000,
-      "must_match_any": ["拍照", "影像", "camera"],
-      "forbidden_terms": [],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "phone_battery_under_4000",
-    "type": "product_retrieval",
-    "description": "4000 元以内续航手机召回应体现电池/续航偏好。",
-    "query": "预算4000，推荐续航好的手机",
-    "structured_filters": {
-      "category": "phone",
-      "category_id": "cat_phone",
-      "budget_max": 4000,
-      "preferences": ["续航"],
-      "negative_preferences": []
+    {
+        "id":  "phone_battery_under_4000",
+        "type":  "product_retrieval",
+        "description":  "4000 元以内续航手机召回应体现电池/续航偏好。",
+        "query":  "预算4000，推荐续航好的手机",
+        "structured_filters":  {
+                                   "category":  "phone",
+                                   "category_id":  "cat_phone",
+                                   "budget_max":  4000,
+                                   "preferences":  [
+                                                       "续航"
+                                                   ],
+                                   "negative_preferences":  [
+
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "phone",
+                       "max_price":  4000,
+                       "must_match_any":  [
+                                              "续航",
+                                              "电池",
+                                              "battery",
+                                              "快充"
+                                          ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_phone_battery":  3
+                           },
+        "hard_filters":  {
+                             "category":  "phone",
+                             "price_lte":  4000
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "phone",
-      "max_price": 4000,
-      "must_match_any": ["续航", "电池", "battery", "快充"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "phone_without_apple",
-    "type": "product_retrieval",
-    "description": "不考虑苹果时，Apple/iPhone 商品应被过滤或明显降权。",
-    "query": "预算5000，推荐拍照好的手机，不考虑苹果",
-    "structured_filters": {
-      "category": "phone",
-      "category_id": "cat_phone",
-      "budget_max": 5000,
-      "preferences": ["拍照"],
-      "negative_preferences": ["苹果"]
+    {
+        "id":  "phone_without_apple",
+        "type":  "product_retrieval",
+        "description":  "不考虑苹果时，Apple/iPhone 商品应被过滤或明显降权。",
+        "query":  "预算5000，推荐拍照好的手机，不考虑苹果",
+        "structured_filters":  {
+                                   "category":  "phone",
+                                   "category_id":  "cat_phone",
+                                   "budget_max":  5000,
+                                   "preferences":  [
+                                                       "拍照"
+                                                   ],
+                                   "negative_preferences":  [
+                                                                "苹果"
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "phone",
+                       "max_price":  5000,
+                       "must_match_any":  [
+                                              "拍照",
+                                              "影像",
+                                              "camera"
+                                          ],
+                       "forbidden_terms":  [
+                                               "苹果",
+                                               "Apple",
+                                               "iPhone"
+                                           ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_phone_camera":  3
+                           },
+        "hard_filters":  {
+                             "price_lte":  5000,
+                             "exclude_brands":  [
+                                                    "Apple"
+                                                ],
+                             "category":  "phone",
+                             "exclude_product_ids":  [
+                                                         "fixture_phone_apple"
+                                                     ]
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "phone",
-      "max_price": 5000,
-      "must_match_any": ["拍照", "影像", "camera"],
-      "forbidden_terms": ["苹果", "Apple", "iPhone"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "shoes_commute_lightweight_under_800",
-    "type": "product_retrieval",
-    "description": "800 元以内通勤轻便鞋靴召回。",
-    "query": "预算800，推荐适合通勤的轻便鞋子",
-    "structured_filters": {
-      "category": "shoes",
-      "category_id": "cat_shoes",
-      "budget_max": 800,
-      "preferences": ["通勤", "轻便"],
-      "negative_preferences": []
+    {
+        "id":  "shoes_commute_lightweight_under_800",
+        "type":  "product_retrieval",
+        "description":  "800 元以内通勤轻便鞋靴召回。",
+        "query":  "预算800，推荐适合通勤的轻便鞋子",
+        "structured_filters":  {
+                                   "category":  "shoes",
+                                   "category_id":  "cat_shoes",
+                                   "budget_max":  800,
+                                   "preferences":  [
+                                                       "通勤",
+                                                       "轻便"
+                                                   ],
+                                   "negative_preferences":  [
+
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "shoes",
+                       "max_price":  800,
+                       "must_match_any":  [
+                                              "通勤",
+                                              "轻便",
+                                              "commute",
+                                              "lightweight"
+                                          ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_shoes_commute":  3
+                           },
+        "hard_filters":  {
+                             "category":  "shoes",
+                             "price_lte":  800
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "shoes",
-      "max_price": 800,
-      "must_match_any": ["通勤", "轻便", "commute", "lightweight"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "shoes_no_high_heels",
-    "type": "product_retrieval",
-    "description": "不考虑高跟时鞋靴召回不应返回高跟商品。",
-    "query": "推荐通勤鞋，不考虑高跟",
-    "structured_filters": {
-      "category": "shoes",
-      "category_id": "cat_shoes",
-      "preferences": ["通勤"],
-      "negative_preferences": ["高跟"]
+    {
+        "id":  "shoes_no_high_heels",
+        "type":  "product_retrieval",
+        "description":  "不考虑高跟时鞋靴召回不应返回高跟商品。",
+        "query":  "推荐通勤鞋，不考虑高跟",
+        "structured_filters":  {
+                                   "category":  "shoes",
+                                   "category_id":  "cat_shoes",
+                                   "preferences":  [
+                                                       "通勤"
+                                                   ],
+                                   "negative_preferences":  [
+                                                                "高跟"
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "shoes",
+                       "must_match_any":  [
+                                              "通勤",
+                                              "鞋"
+                                          ],
+                       "forbidden_terms":  [
+                                               "高跟",
+                                               "high heel"
+                                           ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_shoes_commute":  3
+                           },
+        "hard_filters":  {
+                             "forbidden_terms":  [
+                                                     "high heel"
+                                                 ],
+                             "category":  "shoes",
+                             "exclude_product_ids":  [
+                                                         "fixture_shoes_high_heel"
+                                                     ]
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "shoes",
-      "must_match_any": ["通勤", "鞋"],
-      "forbidden_terms": ["高跟", "high heel"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "skincare_sensitive_moisturizing_under_300",
-    "type": "product_retrieval",
-    "description": "300 元以内敏感肌保湿护肤品召回。",
-    "query": "预算300，推荐适合敏感肌的保湿护肤品",
-    "structured_filters": {
-      "category": "skincare",
-      "category_id": "cat_skincare",
-      "budget_max": 300,
-      "preferences": ["敏感肌", "保湿"],
-      "negative_preferences": []
+    {
+        "id":  "skincare_sensitive_moisturizing_under_300",
+        "type":  "product_retrieval",
+        "description":  "300 元以内敏感肌保湿护肤品召回。",
+        "query":  "预算300，推荐适合敏感肌的保湿护肤品",
+        "structured_filters":  {
+                                   "category":  "skincare",
+                                   "category_id":  "cat_skincare",
+                                   "budget_max":  300,
+                                   "preferences":  [
+                                                       "敏感肌",
+                                                       "保湿"
+                                                   ],
+                                   "negative_preferences":  [
+
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "skincare",
+                       "max_price":  300,
+                       "must_match_any":  [
+                                              "敏感肌",
+                                              "保湿",
+                                              "温和",
+                                              "moisturizing",
+                                              "sensitive"
+                                          ],
+                       "forbidden_terms":  [
+                                               "治疗",
+                                               "治愈",
+                                               "药效",
+                                               "处方",
+                                               "医学修复"
+                                           ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_skincare_sensitive":  3
+                           },
+        "hard_filters":  {
+                             "category":  "skincare",
+                             "price_lte":  300
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "skincare",
-      "max_price": 300,
-      "must_match_any": ["敏感肌", "保湿", "温和", "moisturizing", "sensitive"],
-      "forbidden_terms": ["治疗", "治愈", "药效", "处方", "医学修复"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "skincare_no_whitening",
-    "type": "product_retrieval",
-    "description": "不考虑美白时护肤召回应过滤美白导向商品。",
-    "query": "推荐温和保湿护肤品，不要美白",
-    "structured_filters": {
-      "category": "skincare",
-      "category_id": "cat_skincare",
-      "preferences": ["温和", "保湿"],
-      "negative_preferences": ["美白"]
+    {
+        "id":  "skincare_no_whitening",
+        "type":  "product_retrieval",
+        "description":  "不考虑美白时护肤召回应过滤美白导向商品。",
+        "query":  "推荐温和保湿护肤品，不要美白",
+        "structured_filters":  {
+                                   "category":  "skincare",
+                                   "category_id":  "cat_skincare",
+                                   "preferences":  [
+                                                       "温和",
+                                                       "保湿"
+                                                   ],
+                                   "negative_preferences":  [
+                                                                "美白"
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "skincare",
+                       "must_match_any":  [
+                                              "温和",
+                                              "保湿",
+                                              "敏感肌"
+                                          ],
+                       "forbidden_terms":  [
+                                               "美白",
+                                               "whitening"
+                                           ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_skincare_sensitive":  3
+                           },
+        "hard_filters":  {
+                             "forbidden_terms":  [
+                                                     "whitening"
+                                                 ],
+                             "category":  "skincare",
+                             "exclude_product_ids":  [
+                                                         "fixture_skincare_whitening"
+                                                     ]
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "skincare",
-      "must_match_any": ["温和", "保湿", "敏感肌"],
-      "forbidden_terms": ["美白", "whitening"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "category_switch_phone_to_shoes_no_mixed_category",
-    "type": "product_retrieval",
-    "description": "品类切换到鞋靴后不应混入手机商品。",
-    "query": "换成鞋子看看，预算5000",
-    "structured_filters": {
-      "category": "shoes",
-      "category_id": "cat_shoes",
-      "budget_max": 5000,
-      "preferences": [],
-      "negative_preferences": []
+    {
+        "id":  "category_switch_phone_to_shoes_no_mixed_category",
+        "type":  "product_retrieval",
+        "description":  "品类切换到鞋靴后不应混入手机商品。",
+        "query":  "换成鞋子看看，预算5000",
+        "structured_filters":  {
+                                   "category":  "shoes",
+                                   "category_id":  "cat_shoes",
+                                   "budget_max":  5000,
+                                   "preferences":  [
+
+                                                   ],
+                                   "negative_preferences":  [
+
+                                                            ]
+                               },
+        "expect":  {
+                       "min_results":  1,
+                       "all_category":  "shoes",
+                       "max_price":  5000,
+                       "forbidden_terms":  [
+                                               "手机",
+                                               "iPhone",
+                                               "Android"
+                                           ],
+                       "top_k":  5
+                   },
+        "gold_relevance":  {
+                               "fixture_shoes_commute":  3
+                           },
+        "hard_filters":  {
+                             "category":  "shoes",
+                             "price_lte":  5000
+                         }
     },
-    "expect": {
-      "min_results": 1,
-      "all_category": "shoes",
-      "max_price": 5000,
-      "forbidden_terms": ["手机", "iPhone", "Android"],
-      "top_k": 5
+    {
+        "id":  "knowledge_phone_camera",
+        "type":  "knowledge_retrieval",
+        "description":  "手机拍照知识检索应命中影像参数。",
+        "query":  "手机拍照主要看哪些参数？",
+        "category":  "phone",
+        "category_id":  "cat_phone",
+        "preferences":  [
+                            "拍照"
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "传感器",
+                                                "光圈",
+                                                "防抖",
+                                                "影像",
+                                                "算法"
+                                            ],
+                       "forbidden_terms":  [
+                                               "立即购买",
+                                               "购买链接"
+                                           ],
+                       "top_k":  5
+                   }
+    },
+    {
+        "id":  "knowledge_phone_battery",
+        "type":  "knowledge_retrieval",
+        "description":  "手机续航知识检索应命中电池、快充和功耗。",
+        "query":  "手机续航主要看什么？",
+        "category":  "phone",
+        "category_id":  "cat_phone",
+        "preferences":  [
+                            "续航"
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "电池容量",
+                                                "快充",
+                                                "功耗",
+                                                "续航"
+                                            ],
+                       "forbidden_terms":  [
+                                               "立即购买",
+                                               "购买链接"
+                                           ],
+                       "top_k":  5
+                   }
+    },
+    {
+        "id":  "knowledge_shoes_size",
+        "type":  "knowledge_retrieval",
+        "description":  "鞋靴尺码知识检索。",
+        "query":  "鞋子尺码应该怎么选？",
+        "category":  "shoes",
+        "category_id":  "cat_shoes",
+        "preferences":  [
+
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "尺码",
+                                                "脚长",
+                                                "试穿",
+                                                "鞋楦"
+                                            ],
+                       "forbidden_terms":  [
+                                               "立即购买",
+                                               "购买链接"
+                                           ],
+                       "top_k":  5
+                   }
+    },
+    {
+        "id":  "knowledge_shoes_anti_slip",
+        "type":  "knowledge_retrieval",
+        "description":  "通勤鞋防滑知识检索。",
+        "query":  "通勤鞋防滑主要看什么？",
+        "category":  "shoes",
+        "category_id":  "cat_shoes",
+        "preferences":  [
+                            "防滑",
+                            "通勤"
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "鞋底",
+                                                "纹路",
+                                                "防滑",
+                                                "抓地"
+                                            ],
+                       "forbidden_terms":  [
+                                               "立即购买",
+                                               "购买链接"
+                                           ],
+                       "top_k":  5
+                   }
+    },
+    {
+        "id":  "knowledge_skincare_sensitive",
+        "type":  "knowledge_retrieval",
+        "description":  "敏感肌护肤知识检索。",
+        "query":  "敏感肌护肤应该注意什么？",
+        "category":  "skincare",
+        "category_id":  "cat_skincare",
+        "preferences":  [
+                            "敏感肌",
+                            "温和"
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "温和",
+                                                "保湿",
+                                                "刺激",
+                                                "敏感肌"
+                                            ],
+                       "forbidden_terms":  [
+                                               "治疗",
+                                               "治愈",
+                                               "药效",
+                                               "处方",
+                                               "医学修复"
+                                           ],
+                       "top_k":  5
+                   }
+    },
+    {
+        "id":  "knowledge_skincare_moisturizing",
+        "type":  "knowledge_retrieval",
+        "description":  "保湿护肤知识检索。",
+        "query":  "保湿护肤主要看什么？",
+        "category":  "skincare",
+        "category_id":  "cat_skincare",
+        "preferences":  [
+                            "保湿"
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "保湿",
+                                                "补水",
+                                                "屏障",
+                                                "温和"
+                                            ],
+                       "forbidden_terms":  [
+                                               "治疗",
+                                               "治愈",
+                                               "药效",
+                                               "处方",
+                                               "医学修复"
+                                           ],
+                       "top_k":  5
+                   }
+    },
+    {
+        "id":  "knowledge_skincare_safety_no_medical_claim",
+        "type":  "knowledge_retrieval",
+        "description":  "护肤安全知识检索不应强化医疗承诺。",
+        "query":  "预算300，推荐能治疗痘痘的护肤品",
+        "category":  "skincare",
+        "category_id":  "cat_skincare",
+        "preferences":  [
+                            "清爽",
+                            "控油",
+                            "温和护理"
+                        ],
+        "expect":  {
+                       "min_chunks":  1,
+                       "must_contain_any":  [
+                                                "清爽",
+                                                "控油",
+                                                "温和",
+                                                "日常护理"
+                                            ],
+                       "forbidden_terms":  [
+                                               "治疗",
+                                               "治愈",
+                                               "药效",
+                                               "处方",
+                                               "医学修复",
+                                               "修复疾病"
+                                           ],
+                       "top_k":  5
+                   }
     }
-  },
-  {
-    "id": "knowledge_phone_camera",
-    "type": "knowledge_retrieval",
-    "description": "手机拍照知识检索应命中影像参数。",
-    "query": "手机拍照主要看哪些参数？",
-    "category": "phone",
-    "category_id": "cat_phone",
-    "preferences": ["拍照"],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["传感器", "光圈", "防抖", "影像", "算法"],
-      "forbidden_terms": ["立即购买", "购买链接"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "knowledge_phone_battery",
-    "type": "knowledge_retrieval",
-    "description": "手机续航知识检索应命中电池、快充和功耗。",
-    "query": "手机续航主要看什么？",
-    "category": "phone",
-    "category_id": "cat_phone",
-    "preferences": ["续航"],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["电池容量", "快充", "功耗", "续航"],
-      "forbidden_terms": ["立即购买", "购买链接"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "knowledge_shoes_size",
-    "type": "knowledge_retrieval",
-    "description": "鞋靴尺码知识检索。",
-    "query": "鞋子尺码应该怎么选？",
-    "category": "shoes",
-    "category_id": "cat_shoes",
-    "preferences": [],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["尺码", "脚长", "试穿", "鞋楦"],
-      "forbidden_terms": ["立即购买", "购买链接"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "knowledge_shoes_anti_slip",
-    "type": "knowledge_retrieval",
-    "description": "通勤鞋防滑知识检索。",
-    "query": "通勤鞋防滑主要看什么？",
-    "category": "shoes",
-    "category_id": "cat_shoes",
-    "preferences": ["防滑", "通勤"],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["鞋底", "纹路", "防滑", "抓地"],
-      "forbidden_terms": ["立即购买", "购买链接"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "knowledge_skincare_sensitive",
-    "type": "knowledge_retrieval",
-    "description": "敏感肌护肤知识检索。",
-    "query": "敏感肌护肤应该注意什么？",
-    "category": "skincare",
-    "category_id": "cat_skincare",
-    "preferences": ["敏感肌", "温和"],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["温和", "保湿", "刺激", "敏感肌"],
-      "forbidden_terms": ["治疗", "治愈", "药效", "处方", "医学修复"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "knowledge_skincare_moisturizing",
-    "type": "knowledge_retrieval",
-    "description": "保湿护肤知识检索。",
-    "query": "保湿护肤主要看什么？",
-    "category": "skincare",
-    "category_id": "cat_skincare",
-    "preferences": ["保湿"],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["保湿", "补水", "屏障", "温和"],
-      "forbidden_terms": ["治疗", "治愈", "药效", "处方", "医学修复"],
-      "top_k": 5
-    }
-  },
-  {
-    "id": "knowledge_skincare_safety_no_medical_claim",
-    "type": "knowledge_retrieval",
-    "description": "护肤安全知识检索不应强化医疗承诺。",
-    "query": "预算300，推荐能治疗痘痘的护肤品",
-    "category": "skincare",
-    "category_id": "cat_skincare",
-    "preferences": ["清爽", "控油", "温和护理"],
-    "expect": {
-      "min_chunks": 1,
-      "must_contain_any": ["清爽", "控油", "温和", "日常护理"],
-      "forbidden_terms": ["治疗", "治愈", "药效", "处方", "医学修复", "修复疾病"],
-      "top_k": 5
-    }
-  }
 ]
