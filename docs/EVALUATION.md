@@ -119,6 +119,33 @@ These metrics are computed from manually annotated `gold_relevance` and
 `hard_filters` in selected retrieval eval cases. Cases without gold relevance
 still run the rule-based assertions, but they are skipped for ranking averages.
 
+### Retrieval A/B Strategy Benchmark
+
+`retrieval_ab_benchmark.py` compares deterministic retrieval strategies offline:
+
+- `structured_filter_only`
+- `lexical_keyword`
+- `hybrid_filter_keyword`
+- `hybrid_plus_rerank`
+
+The benchmark reports Recall@K, nDCG@K, MRR@K, filter compliance, empty rate,
+latency, best strategy by metric, deltas versus baseline, strategy win counts,
+and category-level breakdown.
+
+This benchmark is intended for offline analysis and is not part of the default
+regression suite unless explicitly enabled. It does not call external LLM or
+embedding services.
+
+Run:
+
+```bash
+python scripts/retrieval_ab_benchmark.py \
+  --cases data/eval/retrieval_eval_cases.json \
+  --products data/processed/products/all_products_900.jsonl \
+  --strategies structured_filter_only,lexical_keyword,hybrid_filter_keyword,hybrid_plus_rerank \
+  --top-k 5
+```
+
 ### RAG Eval
 
 `rag_eval_cases.json` validates grounded final answers:
