@@ -152,6 +152,30 @@ python ../scripts/run_query_understanding_eval.py --suite all
 python ../scripts/eval_retrieval.py
 ```
 
+### Unified Eval Report
+
+Run all deterministic eval suites and write a Markdown summary plus JSON details:
+
+```bash
+python scripts/run_eval_all.py \
+  --output results/eval-report.md \
+  --details results/eval-details.json
+```
+
+From `backend/`, use:
+
+```bash
+python ../scripts/run_eval_all.py \
+  --output ../results/eval-report.md \
+  --details ../results/eval-details.json
+```
+
+The unified report aggregates QueryUnderstanding, Retrieval, RAG, Multiturn,
+and GroundingGuard suites. It includes suite summaries, pass rates, failure
+reason counts, failed case details, and stable machine-readable JSON. The
+report layer is deterministic and does not require external LLM APIs or
+external network access.
+
 Pytest coverage includes schema validation and fake-client runner checks:
 
 ```bash
